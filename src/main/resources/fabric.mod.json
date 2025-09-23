@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "ultraeconomy",
+  "version": "${version}",
+  "name": "UltraEconomy",
+  "description": "",
+  "authors": [
+    "zonary123"
+  ],
+  "contact": {},
+  "license": "All-Rights-Reserved",
+  "icon": "assets/ultraeconomy/icon.png",
+  "environment": "server",
+  "entrypoints": {
+    "main": [
+      "com.kingpixel.ultraeconomy.Ultraeconomy"
+    ]
+  },
+  "mixins": [
+    "ultraeconomy.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
