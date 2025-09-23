@@ -31,12 +31,18 @@ public class Account {
     return true;
   }
 
-  public synchronized void removeBalance(String currency, BigDecimal amount) {
+  public synchronized boolean removeBalance(String currency, BigDecimal amount) {
     BigDecimal result = balances.computeIfAbsent(currency, k -> BigDecimal.ZERO).subtract(amount);
     balances.put(currency, result);
+    return false;
   }
 
-  public synchronized void setBalance(String currency, BigDecimal amount) {
+  public synchronized BigDecimal setBalance(String currency, BigDecimal amount) {
     balances.put(currency, amount);
+    return amount;
+  }
+
+  public boolean hasEnoughBalance(String currency, BigDecimal amount) {
+    return getBalance(currency).compareTo(amount) >= 0;
   }
 }
