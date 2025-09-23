@@ -26,7 +26,7 @@ public class JSONClient extends DatabaseClient {
 
   @Override
   public Account getAccount(UUID uuid) {
-    Account account = accounts.getIfPresent(uuid);
+    Account account = DatabaseFactory.accounts.getIfPresent(uuid);
     if (account != null) return account;
 
 
