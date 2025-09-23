@@ -2,6 +2,7 @@ package com.kingpixel.ultraeconomy.database;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.kingpixel.cobbleutils.CobbleUtils;
 import com.kingpixel.cobbleutils.Model.DataBaseConfig;
 import com.kingpixel.ultraeconomy.models.Account;
 import org.jetbrains.annotations.NotNull;
@@ -22,11 +23,15 @@ public class DatabaseFactory {
     .maximumSize(1000)
     .removalListener((key, value, cause) -> {
       if (value != null) {
+        Account account = (Account) value;
+        CobbleUtils.LOGGER.info("Saving account " + account.getPlayerUUID() + " to database (cause: " + cause + ")");
         DatabaseFactory.INSTANCE.saveOrUpdateAccount((Account) value);
+      } else {
+        CobbleUtils.LOGGER.warn("Tried to save null account to database (cause: " + cause + ")");
       }
     })
     .build();
-  
+
   public static DatabaseClient INSTANCE = null;
 
   public static void init(DataBaseConfig config) {

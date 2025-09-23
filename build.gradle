@@ -42,9 +42,15 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-    modImplementation(files("libs/CobbleUtils-1.7.0-1.21.1-fabric-1.1.4-bcc15b8.jar"))
-    implementation("org.projectlombok:lombok:0.11.0")
+    modImplementation(files(fileTree(dir: 'libs', include: '*.jar')))
     implementation("com.github.ben-manes.caffeine:caffeine:3.2.2")
+
+    // Database
+    implementation("org.mongodb:mongodb-driver-sync:${property("mongodb_version")}")
+
+    // Lombok
+    annotationProcessor("org.projectlombok:lombok:${property("lombok_version")}")
+    implementation("org.projectlombok:lombok:${property("lombok_version")}")
 }
 
 processResources {

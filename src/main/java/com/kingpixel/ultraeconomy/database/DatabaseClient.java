@@ -4,6 +4,7 @@ import com.kingpixel.cobbleutils.Model.DataBaseConfig;
 import com.kingpixel.ultraeconomy.models.Account;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 public abstract class DatabaseClient {
@@ -30,6 +31,7 @@ public abstract class DatabaseClient {
    * Get an account by UUID
    *
    * @param uuid The UUID of the account
+   *
    * @return The account, or null if not found
    */
   public abstract Account getAccount(UUID uuid);
@@ -47,6 +49,7 @@ public abstract class DatabaseClient {
    * @param uuid     The UUID of the account
    * @param currency The currency to add
    * @param amount   The amount to add
+   *
    * @return true if successful, false otherwise
    */
   public abstract boolean addBalance(UUID uuid, String currency, BigDecimal amount);
@@ -57,6 +60,7 @@ public abstract class DatabaseClient {
    * @param uuid     The UUID of the account
    * @param currency The currency to withdraw
    * @param amount   The amount to withdraw
+   *
    * @return true if successful, false otherwise
    */
   public boolean deposit(UUID uuid, String currency, BigDecimal amount) {
@@ -69,6 +73,7 @@ public abstract class DatabaseClient {
    * @param uuid     The UUID of the account
    * @param currency The currency to remove
    * @param amount   The amount to remove
+   *
    * @return true if successful, false otherwise
    */
   public abstract boolean removeBalance(UUID uuid, String currency, BigDecimal amount);
@@ -79,6 +84,7 @@ public abstract class DatabaseClient {
    * @param uuid     The UUID of the account
    * @param currency The currency to withdraw
    * @param amount   The amount to withdraw
+   *
    * @return true if successful, false otherwise
    */
   public boolean withdraw(UUID uuid, String currency, BigDecimal amount) {
@@ -91,6 +97,7 @@ public abstract class DatabaseClient {
    *
    * @param uuid     The UUID of the account
    * @param currency The currency to get
+   *
    * @return The balance, or null if not found
    */
   public abstract BigDecimal getBalance(UUID uuid, String currency);
@@ -101,6 +108,7 @@ public abstract class DatabaseClient {
    * @param uuid     The UUID of the account
    * @param currency The currency to set
    * @param amount   The amount to set
+   *
    * @return The new balance, or null if not found
    */
   public abstract BigDecimal setBalance(UUID uuid, String currency, BigDecimal amount);
@@ -111,8 +119,19 @@ public abstract class DatabaseClient {
    * @param uuid     The UUID of the account
    * @param currency The currency to check
    * @param amount   The amount to check
+   *
    * @return true if the account has enough balance, false otherwise
    */
   public abstract boolean hasEnoughBalance(UUID uuid, String currency, BigDecimal amount);
+
+  /**
+   * Get the top balances for a currency
+   *
+   * @param currency The currency to get
+   * @param page     The page number (starting from 1)
+   *
+   * @return A list of accounts with the top balances
+   */
+  public abstract List<Account> getTopBalances(String currency, int page);
 
 }

@@ -1,5 +1,7 @@
 package com.kingpixel.ultraeconomy.models;
 
+import com.kingpixel.cobbleutils.CobbleUtils;
+import com.kingpixel.ultraeconomy.config.Currencies;
 import lombok.Data;
 import lombok.ToString;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -12,13 +14,28 @@ import java.util.UUID;
 @Data
 @ToString
 public class Account {
-  private final UUID playerUUID;
-  private final String playerName;
-  private final Map<String, BigDecimal> balances = new HashMap<>();
+  private long rank;
+  private UUID playerUUID;
+  private String playerName;
+  private Map<String, BigDecimal> balances = new HashMap<>();
+
 
   public Account(ServerPlayerEntity player) {
     this.playerUUID = player.getUuid();
     this.playerName = player.getName().getString();
+  }
+
+  public Account(UUID uuid, Map<String, BigDecimal> balances) {
+    ServerPlayerEntity player = CobbleUtils.server.getPlayerManager().getPlayer(uuid);
+    if (player != null) this.playerName = player.getName().getString();
+    this.playerUUID = uuid;
+    this.balances = balances;
+  }
+
+  public Account(UUID uuid, String playerName, Map<String, BigDecimal> balances) {
+    this.playerUUID = uuid;
+    this.playerName = playerName;
+    this.balances = balances;
   }
 
   public BigDecimal getBalance(String currency) {
@@ -44,5 +61,11 @@ public class Account {
 
   public boolean hasEnoughBalance(String currency, BigDecimal amount) {
     return getBalance(currency).compareTo(amount) >= 0;
+  }
+
+  public void fix() {
+    Currencies.CURRENCIES.forEach((k, v) -> {
+      if (!balances.containsKey(k)) setBalance(k, v.getDefaultBalance());
+    });
   }
 }
