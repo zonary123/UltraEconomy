@@ -44,7 +44,7 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
     modImplementation(files(fileTree(dir: 'libs', include: '*.jar')))
     implementation("com.github.ben-manes.caffeine:caffeine:3.2.2")
-
+    modImplementation("com.zaxxer:HikariCP:5.0.1")
     // Database
     implementation("org.mongodb:mongodb-driver-sync:${property("mongodb_version")}")
 

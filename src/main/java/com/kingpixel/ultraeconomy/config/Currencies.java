@@ -1,6 +1,5 @@
 package com.kingpixel.ultraeconomy.config;
 
-import com.kingpixel.cobbleutils.CobbleUtils;
 import com.kingpixel.cobbleutils.util.Utils;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.models.Currency;
@@ -60,15 +59,7 @@ public class Currencies {
 
   public static Currency getCurrency(String currency) {
     Currency c = CURRENCIES.get(currency);
-    if (c == null) {
-      if (UltraEconomy.config.isDebug()) {
-        CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Currency not found: " + currency + ", using default currency: " + DEFAULT_CURRENCY.getId());
-      }
-      return DEFAULT_CURRENCY;
-    }
-    if (UltraEconomy.config.isDebug()) {
-      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Currency found: " + c);
-    }
+    if (c == null) return DEFAULT_CURRENCY;
     return c;
   }
 }

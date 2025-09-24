@@ -1,6 +1,7 @@
 package com.kingpixel.ultraeconomy;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import com.kingpixel.cobbleutils.CobbleUtils;
 import com.kingpixel.cobbleutils.util.Utils;
 import com.kingpixel.ultraeconomy.commands.Register;
 import com.kingpixel.ultraeconomy.config.Config;
@@ -11,6 +12,7 @@ import com.kingpixel.ultraeconomy.models.Account;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 
 import java.io.File;
 import java.util.concurrent.CompletableFuture;
@@ -59,8 +61,11 @@ public class UltraEconomy implements ModInitializer {
         });
     });
 
-    ServerPlayerEvents.LEAVE.register((player) -> {
-      DatabaseFactory.accounts.invalidate(player.getUuid());
+    ServerPlayerEvents.LEAVE.register((player) -> DatabaseFactory.INSTANCE.invalidate(player.getUuid()));
+
+    ServerLifecycleEvents.SERVER_STOPPED.register((server) -> {
+      DatabaseFactory.INSTANCE.disconnect();
+      CobbleUtils.shutdownAndAwait(ULTRA_ECONOMY_EXECUTOR);
     });
 
     CommandRegistrationCallback.EVENT.register(Register::register);

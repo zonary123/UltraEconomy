@@ -21,6 +21,13 @@ public abstract class DatabaseClient {
   public abstract void disconnect();
 
   /**
+   * Invalidate the cache for a player
+   *
+   * @param playerUUID The UUID of the player
+   */
+  public abstract void invalidate(UUID playerUUID);
+
+  /**
    * Check if the database is connected
    *
    * @return true if connected, false otherwise

@@ -1,6 +1,8 @@
 package com.kingpixel.ultraeconomy.api;
 
+import com.kingpixel.cobbleutils.CobbleUtils;
 import com.kingpixel.cobbleutils.database.DataBaseFactory;
+import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.config.Currencies;
 import com.kingpixel.ultraeconomy.database.DatabaseFactory;
 import com.kingpixel.ultraeconomy.models.Account;
@@ -23,7 +25,13 @@ public class UltraEconomyApi {
    * @return the account
    */
   public static Account getAccount(@NotNull ServerPlayerEntity player) {
-    return DatabaseFactory.INSTANCE.getAccount(player.getUuid());
+    long start = System.currentTimeMillis();
+    Account account = DatabaseFactory.INSTANCE.getAccount(player.getUuid());
+    long end = System.currentTimeMillis();
+    if (UltraEconomy.config.isDebug()) {
+      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Get account with player took " + (end - start) + "ms");
+    }
+    return account;
   }
 
   /**
@@ -34,7 +42,13 @@ public class UltraEconomyApi {
    * @return the account
    */
   public static Account getAccount(@NotNull UUID uuid) {
-    return DatabaseFactory.INSTANCE.getAccount(uuid);
+    long start = System.currentTimeMillis();
+    Account account = DatabaseFactory.INSTANCE.getAccount(uuid);
+    long end = System.currentTimeMillis();
+    if (UltraEconomy.config.isDebug()) {
+      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Get account with uuid took " + (end - start) + "ms");
+    }
+    return account;
   }
 
   /**
@@ -60,8 +74,14 @@ public class UltraEconomyApi {
    * @return true if the operation was successful
    */
   public static boolean withdraw(@NotNull ServerPlayerEntity player, @NotNull String currency, @NotNull BigDecimal amount) {
+    long start = System.currentTimeMillis();
     if (getCurrency(currency) == null) return false;
-    return DatabaseFactory.INSTANCE.withdraw(player.getUuid(), currency, amount);
+    boolean result = DatabaseFactory.INSTANCE.withdraw(player.getUuid(), currency, amount);
+    long end = System.currentTimeMillis();
+    if (UltraEconomy.config.isDebug()) {
+      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Withdraw took " + (end - start) + "ms");
+    }
+    return result;
   }
 
   private static Currency getCurrency(String currency) {
@@ -78,8 +98,14 @@ public class UltraEconomyApi {
    * @return true if the operation was successful
    */
   public static boolean deposit(@NotNull ServerPlayerEntity player, @NotNull String currency, @NotNull BigDecimal amount) {
+    long start = System.currentTimeMillis();
     if (getCurrency(currency) == null) return false;
-    return DatabaseFactory.INSTANCE.deposit(player.getUuid(), currency, amount);
+    boolean result = DatabaseFactory.INSTANCE.deposit(player.getUuid(), currency, amount);
+    long end = System.currentTimeMillis();
+    if (UltraEconomy.config.isDebug()) {
+      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Deposit took " + (end - start) + "ms");
+    }
+    return result;
   }
 
   /**
@@ -92,8 +118,14 @@ public class UltraEconomyApi {
    * @return the new balance
    */
   public static BigDecimal setBalance(@NotNull ServerPlayerEntity player, @NotNull String currency, @NotNull BigDecimal amount) {
+    long start = System.currentTimeMillis();
     if (getCurrency(currency) == null) return null;
-    return DatabaseFactory.INSTANCE.setBalance(player.getUuid(), currency, amount);
+    BigDecimal result = DatabaseFactory.INSTANCE.setBalance(player.getUuid(), currency, amount);
+    long end = System.currentTimeMillis();
+    if (UltraEconomy.config.isDebug()) {
+      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Set balance took " + (end - start) + "ms");
+    }
+    return result;
   }
 
   /**
@@ -106,15 +138,19 @@ public class UltraEconomyApi {
    * @return true if the target has enough balance
    */
   public static boolean hasEnoughBalance(@NotNull ServerPlayerEntity player, @NotNull String currency, @NotNull BigDecimal amount) {
+    long start = System.currentTimeMillis();
     if (getCurrency(currency) == null) return false;
-    return DatabaseFactory.INSTANCE.hasEnoughBalance(player.getUuid(), currency, amount);
+    var result = DatabaseFactory.INSTANCE.hasEnoughBalance(player.getUuid(), currency, amount);
+    if (UltraEconomy.config.isDebug()) {
+      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "hasEnoughBalance took " + (System.currentTimeMillis() - start) + "ms");
+    }
+    return result;
   }
 
   public static void pay(ServerPlayerEntity executor, ServerPlayerEntity target, String currency, BigDecimal amount) {
+    long start = System.currentTimeMillis();
     Currency curr = getCurrency(currency);
-    if (!curr.isTransferable()) {
-      return;
-    }
+    if (!curr.isTransferable()) return;
     Account account = UltraEconomyApi.getAccount(executor.getUuid());
     Account targetAccount = UltraEconomyApi.getAccount(target.getUuid());
     if (account == null || targetAccount == null) return;
@@ -122,6 +158,10 @@ public class UltraEconomyApi {
     if (!withdraw(target, currency, amount)) return;
     if (!deposit(target, currency, amount)) {
       deposit(executor, currency, amount);
+    }
+    long end = System.currentTimeMillis();
+    if (UltraEconomy.config.isDebug()) {
+      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Pay took " + (end - start) + "ms");
     }
   }
 }
