@@ -95,6 +95,7 @@ public class JSONClient extends DatabaseClient {
   }
 
   @Override public List<Account> getTopBalances(String currency, int page) {
+    CobbleUtils.LOGGER.warn("getTopBalances is not supported in JSON database.");
     return List.of();
   }
 

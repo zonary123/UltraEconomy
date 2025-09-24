@@ -2,6 +2,7 @@ package com.kingpixel.ultraeconomy.database;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.kingpixel.cobbleutils.CobbleUtils;
 import com.kingpixel.cobbleutils.Model.DataBaseConfig;
 import com.kingpixel.ultraeconomy.UltraEconomy;
@@ -35,6 +36,7 @@ public class MongoDBClient extends DatabaseClient {
     .expireAfterAccess(1, TimeUnit.MINUTES)
     .maximumSize(10_000)
     .removalListener((key, value, cause) -> {
+      if (cause.equals(RemovalCause.REPLACED)) return;
       if (UltraEconomy.config.isDebug()) {
         CobbleUtils.LOGGER.info("Account with UUID " + key + " removed from cache due to " + cause);
       }
@@ -235,7 +237,6 @@ public class MongoDBClient extends DatabaseClient {
     } else {
       result = account.addBalance(currency, amount);
       if (result) addTransaction(uuid, currency, amount, TransactionType.DEPOSIT, true);
-      saveOrUpdateAccount(account);
     }
     return result;
   }
@@ -249,7 +250,6 @@ public class MongoDBClient extends DatabaseClient {
     } else {
       result = account.removeBalance(currency, amount);
       if (result) addTransaction(uuid, currency, amount, TransactionType.WITHDRAW, true);
-      saveOrUpdateAccount(account);
     }
     return result;
   }
@@ -262,7 +262,6 @@ public class MongoDBClient extends DatabaseClient {
     } else {
       account.setBalance(currency, amount);
       addTransaction(uuid, currency, amount, TransactionType.SET, true);
-      saveOrUpdateAccount(account);
     }
     return amount;
   }
@@ -308,27 +307,5 @@ public class MongoDBClient extends DatabaseClient {
 
   public Account getCachedAccount(UUID uuid) {
     return ACCOUNT_CACHE.getIfPresent(uuid);
-  }
-
-  public void syncAccount(UUID uuid) {
-    try {
-      Account account = getAccount(uuid);
-      // sumar todas las transacciones
-      AggregateIterable<Document> result = transactionsCollection.aggregate(Arrays.asList(
-        new Document("$match", new Document("account_uuid", uuid.toString())),
-        new Document("$group", new Document("_id", "$currency_id")
-          .append("total", new Document("$sum", new Document("$toDecimal", "$amount"))))
-      ));
-
-      for (Document doc : result) {
-        String currency = doc.getString("_id");
-        BigDecimal total = doc.get("total", BigDecimal.class);
-        account.setBalance(currency, total);
-      }
-
-      saveOrUpdateAccount(account);
-    } catch (Exception e) {
-      throw new RuntimeException("Error synchronizing account " + uuid, e);
-    }
   }
 }

@@ -45,7 +45,7 @@ public class SQLClient extends DatabaseClient {
         case SQLITE -> {
           Class.forName("org.sqlite.JDBC");
           HikariConfig hikariConfig = new HikariConfig();
-          hikariConfig.setJdbcUrl(config.getUrl());
+          hikariConfig.setJdbcUrl("jdbc:sqlite:config/ultraeconomy/database.db");
           hikariConfig.setMaximumPoolSize(1);
           hikariConfig.setMinimumIdle(1);
           hikariConfig.setConnectionTimeout(5000);
@@ -79,7 +79,7 @@ public class SQLClient extends DatabaseClient {
           dataSource = new HikariDataSource(hikariConfig);
 
           asyncExecutor = Executors.newFixedThreadPool(4, r -> {
-            Thread t = new Thread(r, "MySQL-Worker");
+            Thread t = new Thread(r, "MySQL-Worker-UltraEconomy-%d");
             t.setDaemon(true);
             return t;
           });
