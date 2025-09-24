@@ -305,6 +305,10 @@ public class MongoDBClient extends DatabaseClient {
     return topAccounts;
   }
 
+  @Override public void flushCache() {
+    ACCOUNT_CACHE.invalidateAll();
+  }
+
   public Account getCachedAccount(UUID uuid) {
     return ACCOUNT_CACHE.getIfPresent(uuid);
   }

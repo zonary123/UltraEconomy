@@ -141,4 +141,5 @@ public abstract class DatabaseClient {
    */
   public abstract List<Account> getTopBalances(String currency, int page);
 
+  public abstract void flushCache();
 }

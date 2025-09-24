@@ -93,7 +93,7 @@ public class SQLClient extends DatabaseClient {
       createIndexes(config.getType());
 
       transactionExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
-        Thread t = new Thread(r, "Transaction-Worker");
+        Thread t = new Thread(r, "Transaction-Worker-UltraEconomy");
         t.setDaemon(true);
         return t;
       });
@@ -276,6 +276,10 @@ public class SQLClient extends DatabaseClient {
     }
 
     return topAccounts;
+  }
+
+  @Override public void flushCache() {
+    ACCOUNT_CACHE.invalidateAll();
   }
 
   private void addTransaction(UUID uuid, String currency, BigDecimal amount, TransactionType type, boolean processed) {

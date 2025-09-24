@@ -56,4 +56,10 @@ public class Config {
 
 
   }
+
+  public void writeConfig() {
+    Gson gson = Utils.newGson();
+    String data = gson.toJson(this);
+    Utils.writeFileAsync(UltraEconomy.PATH, "config.json", data);
+  }
 }

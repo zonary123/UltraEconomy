@@ -99,4 +99,8 @@ public class JSONClient extends DatabaseClient {
     return List.of();
   }
 
+  @Override public void flushCache() {
+    DatabaseFactory.accounts.invalidateAll();
+  }
+
 }

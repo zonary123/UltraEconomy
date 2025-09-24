@@ -46,7 +46,7 @@ public class DepositCommand {
                           data.ifPresentOrElse(
                             d -> {
                               BigDecimal value = BigDecimal.valueOf(Double.parseDouble(amountStr));
-                              UltraEconomyApi.deposit(d.player(), currency.getId(), value);
+                              UltraEconomyApi.deposit(d.player().getUuid(), currency.getId(), value);
                               context.getSource().sendMessage(AdventureTranslator.toNative("§aDeposited " + currency.format(value) + " " +
                                 "to " + d.player().getGameProfile().getName()));
                             },

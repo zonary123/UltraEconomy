@@ -19,44 +19,47 @@ import java.util.concurrent.CompletableFuture;
  */
 public class BalanceCommand {
   public static void put(CommandDispatcher<ServerCommandSource> dispatcher, LiteralArgumentBuilder<ServerCommandSource> base) {
-    base.then(
-      CommandManager.literal("balance")
-        .executes(context -> {
-          run(context.getSource().getPlayer(), context.getSource(), Currencies.DEFAULT_CURRENCY.getId());
-          return 1;
-        }).then(
-          CommandManager.argument("currency", StringArgumentType.string())
-            .suggests((context, builder) -> {
-              var size = Currencies.CURRENCY_IDS.length;
-              for (int i = 0; i < size; i++) {
-                builder.suggest(Currencies.CURRENCY_IDS[i]);
-              }
-              return builder.buildFuture();
-            }).executes(context -> {
-              run(context.getSource().getPlayer(), context.getSource(), StringArgumentType.getString(context, "currency"));
-              return 1;
-            }).then(
-              CobbleUtilsSuggests.SUGGESTS_PLAYER_OFFLINE_AND_ONLINE.suggestPlayerName("player", List.of(
-                  "ultraeconomy.admin.balance"
-                ), 0)
-                .executes(context -> {
-                  CompletableFuture.runAsync(() -> {
-                    var target = StringArgumentType.getString(context, "player");
-                    var currencyId = StringArgumentType.getString(context, "currency");
-                    var data = CobbleUtilsSuggests.SUGGESTS_PLAYER_OFFLINE_AND_ONLINE.getPlayer(target);
-                    data.ifPresentOrElse(
-                      d -> run(d.player(), context.getSource(), currencyId),
-                      () -> context.getSource().sendError(Text.literal("§cPlayer not found"))
-                    );
-                  }, UltraEconomy.ULTRA_ECONOMY_EXECUTOR).exceptionally(e -> {
-                    e.printStackTrace();
-                    return null;
-                  });
-                  return 1;
-                })
-            )
-        )
-    );
+    base.then(get());
+    dispatcher.register(get());
+  }
+
+  private static LiteralArgumentBuilder<ServerCommandSource> get() {
+    return CommandManager.literal("balance")
+      .executes(context -> {
+        run(context.getSource().getPlayer(), context.getSource(), Currencies.DEFAULT_CURRENCY.getId());
+        return 1;
+      }).then(
+        CommandManager.argument("currency", StringArgumentType.string())
+          .suggests((context, builder) -> {
+            var size = Currencies.CURRENCY_IDS.length;
+            for (int i = 0; i < size; i++) {
+              builder.suggest(Currencies.CURRENCY_IDS[i]);
+            }
+            return builder.buildFuture();
+          }).executes(context -> {
+            run(context.getSource().getPlayer(), context.getSource(), StringArgumentType.getString(context, "currency"));
+            return 1;
+          }).then(
+            CobbleUtilsSuggests.SUGGESTS_PLAYER_OFFLINE_AND_ONLINE.suggestPlayerName("player", List.of(
+                "ultraeconomy.admin.balance"
+              ), 0)
+              .executes(context -> {
+                CompletableFuture.runAsync(() -> {
+                  var target = StringArgumentType.getString(context, "player");
+                  var currencyId = StringArgumentType.getString(context, "currency");
+                  var data = CobbleUtilsSuggests.SUGGESTS_PLAYER_OFFLINE_AND_ONLINE.getPlayer(target);
+                  data.ifPresentOrElse(
+                    d -> run(d.player(), context.getSource(), currencyId),
+                    () -> context.getSource().sendError(Text.literal("§cPlayer not found"))
+                  );
+                }, UltraEconomy.ULTRA_ECONOMY_EXECUTOR).exceptionally(e -> {
+                  e.printStackTrace();
+                  return null;
+                });
+                return 1;
+              })
+          )
+      );
   }
 
   public static void run(ServerPlayerEntity target, ServerCommandSource source, String currencyId) {
@@ -66,7 +69,7 @@ public class BalanceCommand {
         return;
       }
 
-      var account = com.kingpixel.ultraeconomy.api.UltraEconomyApi.getAccount(target);
+      var account = com.kingpixel.ultraeconomy.api.UltraEconomyApi.getAccount(target.getUuid());
       if (account == null) {
         source.sendError(Text.literal("§cAccount not found"));
         return;

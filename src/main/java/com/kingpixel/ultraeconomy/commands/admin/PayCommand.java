@@ -76,7 +76,7 @@ public class PayCommand {
             );
             return;
           }
-          UltraEconomyApi.pay(executor, dataResultPlayer.player(), currency.getId(), amount);
+          UltraEconomyApi.transfer(executor.getUuid(), dataResultPlayer.player().getUuid(), currency.getId(), amount);
         });
       }, UltraEconomy.ULTRA_ECONOMY_EXECUTOR)
       .exceptionally(e -> {

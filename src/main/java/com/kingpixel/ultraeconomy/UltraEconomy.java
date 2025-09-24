@@ -32,6 +32,7 @@ public class UltraEconomy implements ModInitializer {
       .setDaemon(true)
       .build()
   );
+  public static boolean migrationDone;
 
   @Override
   public void onInitialize() {
@@ -68,6 +69,18 @@ public class UltraEconomy implements ModInitializer {
     ServerLifecycleEvents.SERVER_STARTED.register((server) -> {
       UltraEconomy.server = server;
       config.getMigration().startMigration();
+      migrationDone = true;
+/*      ServiceProvider sp = Impactor.instance().services();
+      EconomyService original = sp.provide(EconomyService.class);
+
+
+      CustomEconomyService customEconomyService = new CustomEconomyService(original);
+      sp.register(EconomyService.class, customEconomyService);
+      CobbleUtils.LOGGER.info(MOD_ID, "Custom EconomyService registered.");*/
+    });
+
+    ServerLifecycleEvents.SERVER_STOPPING.register((server) -> {
+      DatabaseFactory.INSTANCE.flushCache();
     });
 
     ServerLifecycleEvents.SERVER_STOPPED.register((server) -> {
