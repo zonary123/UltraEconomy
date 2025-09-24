@@ -13,6 +13,7 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.minecraft.server.MinecraftServer;
 
 import java.io.File;
 import java.util.concurrent.CompletableFuture;
@@ -22,6 +23,7 @@ import java.util.concurrent.Executors;
 public class UltraEconomy implements ModInitializer {
   public static final String MOD_ID = "ultraeconomy";
   public static final String PATH = "/config/ultraeconomy";
+  public static MinecraftServer server;
   public static Config config = new Config();
   public static Lang lang = new Lang();
   public static final ExecutorService ULTRA_ECONOMY_EXECUTOR = Executors.newSingleThreadExecutor(
@@ -62,6 +64,11 @@ public class UltraEconomy implements ModInitializer {
     });
 
     ServerPlayerEvents.LEAVE.register((player) -> DatabaseFactory.INSTANCE.invalidate(player.getUuid()));
+
+    ServerLifecycleEvents.SERVER_STARTED.register((server) -> {
+      UltraEconomy.server = server;
+      config.getMigration().startMigration();
+    });
 
     ServerLifecycleEvents.SERVER_STOPPED.register((server) -> {
       DatabaseFactory.INSTANCE.disconnect();

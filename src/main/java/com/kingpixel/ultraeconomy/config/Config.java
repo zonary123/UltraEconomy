@@ -7,6 +7,7 @@ import com.kingpixel.cobbleutils.Model.DataBaseType;
 import com.kingpixel.cobbleutils.Model.DurationValue;
 import com.kingpixel.cobbleutils.util.Utils;
 import com.kingpixel.ultraeconomy.UltraEconomy;
+import com.kingpixel.ultraeconomy.models.MigrationConfig;
 import lombok.Data;
 
 import java.util.List;
@@ -21,6 +22,7 @@ public class Config {
   private String lang;
   private List<String> commands;
   private DataBaseConfig database;
+  private MigrationConfig migration;
   private int limitTopPlayers;
   private int adjustmentShortName;
   private DurationValue balTopCooldown;
@@ -31,6 +33,7 @@ public class Config {
     database = new DataBaseConfig();
     database.setType(DataBaseType.SQLITE);
     database.setUrl("jdbc:sqlite:ultraeconomy.db");
+    migration = new MigrationConfig();
     limitTopPlayers = 10;
     adjustmentShortName = 3;
     balTopCooldown = DurationValue.parse("10s");

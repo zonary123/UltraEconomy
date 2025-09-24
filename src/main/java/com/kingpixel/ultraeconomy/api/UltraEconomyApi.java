@@ -21,7 +21,6 @@ public class UltraEconomyApi {
    * Get the account of a target
    *
    * @param player the target
-   *
    * @return the account
    */
   public static Account getAccount(@NotNull ServerPlayerEntity player) {
@@ -38,7 +37,6 @@ public class UltraEconomyApi {
    * Get the account of a target by UUID
    *
    * @param uuid the target's UUID
-   *
    * @return the account
    */
   public static Account getAccount(@NotNull UUID uuid) {
@@ -55,7 +53,6 @@ public class UltraEconomyApi {
    * Get the account of a target by name
    *
    * @param playerName the target's name
-   *
    * @return the account
    */
   public static Account getAccount(@NotNull String playerName) {
@@ -70,7 +67,6 @@ public class UltraEconomyApi {
    * @param player   the target
    * @param currency the currency
    * @param amount   the amount
-   *
    * @return true if the operation was successful
    */
   public static boolean withdraw(@NotNull ServerPlayerEntity player, @NotNull String currency, @NotNull BigDecimal amount) {
@@ -94,7 +90,6 @@ public class UltraEconomyApi {
    * @param player   the target
    * @param currency the currency
    * @param amount   the amount
-   *
    * @return true if the operation was successful
    */
   public static boolean deposit(@NotNull ServerPlayerEntity player, @NotNull String currency, @NotNull BigDecimal amount) {
@@ -114,7 +109,6 @@ public class UltraEconomyApi {
    * @param player   the target
    * @param currency the currency
    * @param amount   the amount
-   *
    * @return the new balance
    */
   public static BigDecimal setBalance(@NotNull ServerPlayerEntity player, @NotNull String currency, @NotNull BigDecimal amount) {
@@ -134,7 +128,6 @@ public class UltraEconomyApi {
    * @param player   the target
    * @param currency the currency
    * @param amount   the amount
-   *
    * @return true if the target has enough balance
    */
   public static boolean hasEnoughBalance(@NotNull ServerPlayerEntity player, @NotNull String currency, @NotNull BigDecimal amount) {

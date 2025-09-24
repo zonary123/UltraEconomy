@@ -52,7 +52,7 @@ public class MongoDBClient extends DatabaseClient {
       mongoClient = MongoClients.create(
         MongoClientSettings.builder()
           .applyConnectionString(new ConnectionString(config.getUrl()))
-          .applicationName("UltraEconomy")
+          .applicationName("UltraEconomy-MongoDB")
           .build()
       );
       database = mongoClient.getDatabase(config.getDatabase());

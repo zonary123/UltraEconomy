@@ -4,6 +4,7 @@
   "package": "com.kingpixel.ultraeconomy.mixins",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "UserCacheMixin"
   ],
   "injectors": {
     "defaultRequire": 1
