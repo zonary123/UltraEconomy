@@ -77,6 +77,7 @@ public class MigrationConfig {
                 );
                 CobbleUtils.LOGGER.info("Migrated " + balance + " " + currencyId + " for player " + name);
               }
+              UltraEconomyApi.saveAccount(account);
             });
           });
 

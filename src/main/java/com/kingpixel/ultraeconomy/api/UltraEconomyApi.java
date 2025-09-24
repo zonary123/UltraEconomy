@@ -157,4 +157,18 @@ public class UltraEconomyApi {
       CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Pay took " + (end - start) + "ms");
     }
   }
+
+  /**
+   * Save an account to the database (This is done automatically when modifying the account)
+   *
+   * @param account the account
+   */
+  public static void saveAccount(Account account) {
+    long start = System.currentTimeMillis();
+    DatabaseFactory.INSTANCE.saveOrUpdateAccount(account);
+    long end = System.currentTimeMillis();
+    if (UltraEconomy.config.isDebug()) {
+      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Save account took " + (end - start) + "ms");
+    }
+  }
 }
