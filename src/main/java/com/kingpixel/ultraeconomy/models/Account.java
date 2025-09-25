@@ -41,7 +41,7 @@ public class Account {
   }
 
   public BigDecimal getBalance(String currency) {
-    return balances.getOrDefault(currency, BigDecimal.ZERO);
+    return balances.getOrDefault(currency, null);
   }
 
   public boolean addBalance(String currency, BigDecimal amount) {

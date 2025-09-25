@@ -9,6 +9,8 @@ import net.minecraft.text.Text;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.text.NumberFormat;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -62,10 +64,15 @@ public class Currency {
   }
 
   public String format(BigDecimal value) {
-    return formatCache.get(value, this::replace);
+    return formatCache.get(value, v -> replace(v, Locale.US));
   }
 
-  private String replace(BigDecimal value) {
+  public String format(BigDecimal value, Locale locale) {
+    return formatCache.get(value, v -> replace(v, locale));
+  }
+
+
+  private String replace(BigDecimal value, Locale locale) {
     String amountStr = value.setScale(decimals, RoundingMode.DOWN)
       .stripTrailingZeros()
       .toPlainString();
@@ -108,24 +115,65 @@ public class Currency {
     return sb.toString();
   }
 
+  /**
+   * Format amount with suffixes (K, M, B, T, etc.)
+   *
+   * @param value the amount to format
+   *
+   * @return the formatted amount with suffix
+   */
   private String formatAmount(BigDecimal value) {
+    return formatAmount(value, Locale.US);
+  }
+
+  /**
+   * Format amount with suffixes (K, M, B, T, etc.) using a specific locale
+   *
+   * @param value  the amount to format
+   * @param locale the locale to use for formatting
+   *
+   * @return the formatted amount with suffix
+   */
+  private String formatAmount(BigDecimal value, Locale locale) {
     BigDecimal thousand = BigDecimal.valueOf(1000);
     int suffixIndex = 0;
 
+    // Reducir el número hasta que sea menor que 1000 o lleguemos al último sufijo
     while (value.compareTo(thousand) >= 0 && suffixIndex < SUFFIXES.length - 1) {
-      value = value.divide(thousand);
+      value = value.divide(thousand, 2, RoundingMode.DOWN); // división con redondeo inmediato
       suffixIndex++;
     }
 
+    // Usar NumberFormat para formatear decimales de forma segura y con separador de miles
+    NumberFormat nf = NumberFormat.getNumberInstance(locale);
+    nf.setMaximumFractionDigits(Math.max(decimals, UltraEconomy.config.getAdjustmentShortName()));
+    nf.setMinimumFractionDigits(0);
+    nf.setGroupingUsed(false); // sin separadores de miles, ya que es un valor reducido
 
-    return value.setScale(Math.max(decimals, UltraEconomy.config.getAdjustmentShortName()), RoundingMode.DOWN)
-      .stripTrailingZeros()
-      .toPlainString()
-      + SUFFIXES[suffixIndex];
+    return nf.format(value) + SUFFIXES[suffixIndex];
   }
 
 
+  /**
+   * Format the value and return it as a Text component
+   *
+   * @param value the value to format
+   *
+   * @return the formatted value as Text
+   */
   public Text formatText(BigDecimal value) {
     return formatTextCache.get(value, v -> AdventureTranslator.toNative(format(v)));
+  }
+
+  /**
+   * Format the value with a specific locale and return it as a Text component
+   *
+   * @param value  the value to format
+   * @param locale the locale to use for formatting
+   *
+   * @return the formatted value as Text
+   */
+  public Text formatText(BigDecimal value, Locale locale) {
+    return formatTextCache.get(value, v -> AdventureTranslator.toNative(format(v, locale)));
   }
 }

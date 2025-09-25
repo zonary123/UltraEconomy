@@ -4,9 +4,9 @@
   "package": "com.kingpixel.ultraeconomy.mixins",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "ImpactorAccountMixin",
-    "ImpactorMixin",
-    "UserCacheMixin"
+    "UserCacheMixin",
+    "impactor.ImpactorAccountMixin",
+    "impactor.ImpactorCurrencyMixin"
   ],
   "injectors": {
     "defaultRequire": 1

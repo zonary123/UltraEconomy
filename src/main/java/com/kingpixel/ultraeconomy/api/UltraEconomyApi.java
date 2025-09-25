@@ -10,6 +10,7 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.UserCache;
 import org.jetbrains.annotations.NotNull;
 
+import javax.annotation.Nullable;
 import java.math.BigDecimal;
 import java.util.UUID;
 
@@ -118,7 +119,7 @@ public class UltraEconomyApi {
    *
    * @return the balance, or null if the currency does not exist
    */
-  public static @NotNull BigDecimal getBalance(@NotNull UUID uuid, @NotNull String currency) {
+  public static @Nullable BigDecimal getBalance(@NotNull UUID uuid, @NotNull String currency) {
     long start = System.currentTimeMillis();
     if (getCurrency(currency) == null) return BigDecimal.ZERO;
     BigDecimal result = DatabaseFactory.INSTANCE.getBalance(uuid, currency);

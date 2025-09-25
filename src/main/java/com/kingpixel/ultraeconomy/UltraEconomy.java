@@ -70,13 +70,6 @@ public class UltraEconomy implements ModInitializer {
       UltraEconomy.server = server;
       config.getMigration().startMigration();
       migrationDone = true;
-/*      ServiceProvider sp = Impactor.instance().services();
-      EconomyService original = sp.provide(EconomyService.class);
-
-
-      CustomEconomyService customEconomyService = new CustomEconomyService(original);
-      sp.register(EconomyService.class, customEconomyService);
-      CobbleUtils.LOGGER.info(MOD_ID, "Custom EconomyService registered.");*/
     });
 
     ServerLifecycleEvents.SERVER_STOPPING.register((server) -> {

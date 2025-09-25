@@ -3,6 +3,7 @@ package com.kingpixel.ultraeconomy.database;
 import com.kingpixel.cobbleutils.Model.DataBaseConfig;
 import com.kingpixel.ultraeconomy.models.Account;
 
+import javax.annotation.Nullable;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
@@ -107,7 +108,7 @@ public abstract class DatabaseClient {
    *
    * @return The balance, or null if not found
    */
-  public abstract BigDecimal getBalance(UUID uuid, String currency);
+  public abstract @Nullable BigDecimal getBalance(UUID uuid, String currency);
 
   /**
    * Set the balance of an account

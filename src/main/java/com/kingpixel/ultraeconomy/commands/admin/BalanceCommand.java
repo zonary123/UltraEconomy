@@ -2,6 +2,7 @@ package com.kingpixel.ultraeconomy.commands.admin;
 
 import com.kingpixel.cobbleutils.command.suggests.CobbleUtilsSuggests;
 import com.kingpixel.ultraeconomy.UltraEconomy;
+import com.kingpixel.ultraeconomy.api.UltraEconomyApi;
 import com.kingpixel.ultraeconomy.config.Currencies;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -12,6 +13,7 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -69,7 +71,7 @@ public class BalanceCommand {
         return;
       }
 
-      var account = com.kingpixel.ultraeconomy.api.UltraEconomyApi.getAccount(target.getUuid());
+      var account = UltraEconomyApi.getAccount(target.getUuid());
       if (account == null) {
         source.sendError(Text.literal("§cAccount not found"));
         return;
@@ -77,7 +79,8 @@ public class BalanceCommand {
 
       var currency = Currencies.getCurrency(currencyId);
       if (currency == null) {
-        source.sendError(Text.literal("§cDefault currency not found"));
+        source.sendError(Text.literal("§cCurrency not found: " + currencyId + ". Available: " + String.join(", ",
+          Currencies.CURRENCY_IDS)));
         return;
       }
 
@@ -89,7 +92,8 @@ public class BalanceCommand {
       ServerPlayerEntity player = source.getPlayer();
 
       var lang = UltraEconomy.lang;
-      String modifiedContent = lang.getMessageBalance().getRawMessage().replace("%balance%", currency.format(balance));
+      String modifiedContent = lang.getMessageBalance().getRawMessage().replace("%balance%", currency.format(balance,
+        Locale.US));
       var message = lang.getMessageBalance();
       message.sendMessage(
         player,

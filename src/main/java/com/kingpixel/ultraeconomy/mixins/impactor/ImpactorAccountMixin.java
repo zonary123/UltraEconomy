@@ -1,4 +1,4 @@
-package com.kingpixel.ultraeconomy.mixins;
+package com.kingpixel.ultraeconomy.mixins.impactor;
 
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.api.UltraEconomyApi;

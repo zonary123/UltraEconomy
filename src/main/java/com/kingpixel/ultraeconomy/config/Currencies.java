@@ -4,6 +4,7 @@ import com.kingpixel.cobbleutils.util.Utils;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.models.Currency;
 
+import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -57,9 +58,7 @@ public class Currencies {
     Utils.writeFileAsync(PATH, currency.getId() + ".json", data);
   }
 
-  public static Currency getCurrency(String currency) {
-    Currency c = CURRENCIES.get(currency);
-    if (c == null) return DEFAULT_CURRENCY;
-    return c;
+  public static @Nullable Currency getCurrency(String currency) {
+    return CURRENCIES.get(currency);
   }
 }
