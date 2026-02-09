@@ -29,16 +29,14 @@ public abstract class BeconomyServiceMixin {
   @Inject(method = "subtractBalance", at = @At("HEAD"), cancellable = true, remap = false)
   private void subtractBalance(UUID playerId, BigDecimal amount, String currencyType, CallbackInfoReturnable<Boolean> cir) {
     if (UltraEconomy.migrationDone) {
-      UltraEconomyApi.withdraw(playerId, currencyType, amount);
-      cir.cancel();
+      cir.setReturnValue(UltraEconomyApi.withdraw(playerId, currencyType, amount));
     }
   }
 
   @Inject(method = "getBalance", at = @At("HEAD"), cancellable = true, remap = false)
   private void getBalance(UUID playerId, String currencyType, CallbackInfoReturnable<BigDecimal> cir) {
     if (UltraEconomy.migrationDone) {
-      BigDecimal balance = UltraEconomyApi.getBalance(playerId, currencyType);
-      cir.setReturnValue(balance);
+      cir.setReturnValue(UltraEconomyApi.getBalance(playerId, currencyType));
     }
   }
 
@@ -46,7 +44,6 @@ public abstract class BeconomyServiceMixin {
   private void transfer(UUID fromPlayerId, UUID toPlayerId, BigDecimal amount, String currencyType, CallbackInfoReturnable<Boolean> cir) {
     if (UltraEconomy.migrationDone) {
       cir.setReturnValue(UltraEconomyApi.transfer(fromPlayerId, toPlayerId, currencyType, amount));
-      cir.cancel();
     }
   }
 
@@ -62,7 +59,6 @@ public abstract class BeconomyServiceMixin {
   private void hasEnoughFunds(UUID playerId, BigDecimal amount, String currencyType, CallbackInfoReturnable<Boolean> cir) {
     if (UltraEconomy.migrationDone) {
       cir.setReturnValue(UltraEconomyApi.hasEnoughBalance(playerId, currencyType, amount));
-      cir.cancel();
     }
   }
 }

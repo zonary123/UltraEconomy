@@ -1,5 +1,15 @@
 # Changelog
 
+
+## [1.0.1] - 09-02-2026
+
+
+### Feature plans
+- Upcoming backup system.
+- Upcoming discord webhook notifications.
+- Upcoming more detailed transaction history.
+- Upcoming Web dashboard view statistics and management.
+- 
 ## [1.0.0] - 2025-12-01
 
 ### Added
