@@ -51,7 +51,18 @@ public abstract class ImpactorAccountMixin {
                         CallbackInfoReturnable<EconomyTransaction> cir) {
     if (UltraEconomy.migrationDone) {
       ImpactorAccount self = (ImpactorAccount) (Object) this;
-      UltraEconomyApi.withdraw(self.owner(), getCurrencyId(self.currency()), amount);
+      String currencyId = getCurrencyId(self.currency());
+
+      if (!UltraEconomyApi.hasEnoughBalance(self.owner(), currencyId, amount)) {
+        cir.setReturnValue(EconomyTransaction.compose()
+          .account(self)
+          .amount(amount)
+          .type(EconomyTransactionType.WITHDRAW)
+          .build());
+        return;
+      }
+
+      UltraEconomyApi.withdraw(self.owner(), currencyId, amount);
       cir.setReturnValue(EconomyTransaction.compose()
         .account(self)
         .amount(amount)
