@@ -158,7 +158,7 @@ function initSelectors () {
 
   const onChange = () => {
     selectedCurrency = curSelect.value
-    selectedDays = parseInt(daysSelect.value)
+    selectedDays = Number.parseInt(daysSelect.value, 10)
     currentPage = 1
     renderSummary()
     renderTransactions()
@@ -296,11 +296,20 @@ function renderTransactions () {
 async function initChart () {
   try {
     await loadScript(CHART_JS_URL)
+    await waitForLayout()
     renderChart()
   } catch {
     const wrapper = document.querySelector('.chart-container')
     if (wrapper) wrapper.innerHTML = '<div class="chart-empty">Chart unavailable</div>'
   }
+}
+
+function waitForLayout () {
+  return new Promise(resolve => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(resolve)
+    })
+  })
 }
 
 function renderChart () {
