@@ -1,28 +1,30 @@
 package com.kingpixel.ultraeconomy.manager;
 
-/**
- *
- * @author Carlos Varas Alonso - 11/10/2025 7:51
- */
-
-import com.kingpixel.cobbleutils.CobbleUtils;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 
 import java.util.Queue;
 import java.util.UUID;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
 
+/**
+ * @author Carlos Varas Alonso - 11/10/2025 7:51
+ */
 public class PlayerMessageQueueManager {
 
   private static final ConcurrentHashMap<UUID, Queue<Runnable>> MESSAGE_QUEUES = new ConcurrentHashMap<>();
-  public
-  static final ScheduledExecutorService SCHEDULER = Executors.newSingleThreadScheduledExecutor();
 
-  static {
-    // Inicia un scheduler que procesa las colas cada 1 segundo
-    SCHEDULER.scheduleAtFixedRate(PlayerMessageQueueManager::processQueues, 0,
-      UltraEconomy.config.getBetweenMessagesDelay().toMillis(),
-      TimeUnit.MILLISECONDS);
+  /**
+   * Initialize the message queue scheduler.
+   * Must be called after config is loaded (SERVER_STARTED).
+   */
+  public static void init() {
+    long delayMs = UltraEconomy.config.getBetweenMessagesDelay().toMillis();
+    UltraEconomy.getAsyncContext().scheduleAtFixedRate(
+      PlayerMessageQueueManager::processQueues,
+      0, delayMs, TimeUnit.MILLISECONDS
+    );
   }
 
   /**
@@ -46,7 +48,7 @@ public class PlayerMessageQueueManager {
           action.run();
         } catch (Exception e) {
           if (UltraEconomy.config.isDebug()) {
-            CobbleUtils.LOGGER.error(UltraEconomy.MOD_ID, "Error al enviar mensaje en cola: " + e.getMessage());
+            UltraEconomy.LOGGER.error("Error sending queued message for player " + playerUUID, e);
           }
         }
       }
@@ -56,4 +58,3 @@ public class PlayerMessageQueueManager {
     }
   }
 }
-

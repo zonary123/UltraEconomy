@@ -1,17 +1,17 @@
 package com.kingpixel.ultraeconomy.config;
 
-import com.google.gson.Gson;
-import com.kingpixel.cobbleutils.CobbleUtils;
 import com.kingpixel.cobbleutils.Model.DataBaseConfig;
 import com.kingpixel.cobbleutils.Model.DataBaseType;
 import com.kingpixel.cobbleutils.Model.DurationValue;
 import com.kingpixel.cobbleutils.util.Utils;
+import com.kingpixel.cobbleutils.util.UtilsFile;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.models.MigrationConfig;
 import lombok.Data;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * @author Carlos Varas Alonso - 23/09/2025 20:55
@@ -34,6 +34,19 @@ public class Config {
   private int limitTopPlayers;
   private int adjustmentShortName;
   private DurationValue balTopCooldown;
+  /**
+   * TTL (in seconds) for the local account cache.
+   * <p>
+   * Cross-server (shared MySQL/MongoDB): set to 30-60 for near-real-time sync.
+   * Single-server: set to 0 to disable TTL (cache indefinitely, best performance).
+   * </p>
+   */
+  private int cacheTtlSeconds;
+
+  /**
+   * Web security configuration: rate limiting, auto-ban, security headers.
+   */
+  private WebSecurityConfig webSecurity;
 
   public Config() {
     debug = false;
@@ -53,29 +66,29 @@ public class Config {
     limitTopPlayers = 10;
     adjustmentShortName = 3;
     balTopCooldown = DurationValue.parse("10s");
+    cacheTtlSeconds = 60;
+    webSecurity = new WebSecurityConfig();
   }
 
   public void init() {
-    CompletableFuture<Boolean> futureRead = Utils.readFileAsync(UltraEconomy.PATH, FILE_NAME, callback -> {
-      Gson gson = Utils.newGson();
-      UltraEconomy.config = gson.fromJson(callback, Config.class);
-      String data = gson.toJson(UltraEconomy.config);
-      Utils.writeFileAsync(UltraEconomy.PATH, FILE_NAME, data);
-    });
-    if (Boolean.FALSE.equals(futureRead.join())) {
-      CobbleUtils.LOGGER.info("Creating new config file at " + Utils.getAbsolutePath(UltraEconomy.PATH + "/" + FILE_NAME).getAbsolutePath());
-      Gson gson = Utils.newGson();
-      UltraEconomy.config = this;
-      String data = gson.toJson(UltraEconomy.config);
-      Utils.writeFileAsync(UltraEconomy.PATH, FILE_NAME, data);
+    Path filePath = Utils.getAbsolutePath(UltraEconomy.PATH).toPath().resolve(FILE_NAME);
+    try {
+      UltraEconomy.config = UtilsFile.readOrCreate(filePath, Config.class, Config::new);
+      UtilsFile.write(filePath, UltraEconomy.config);
+    } catch (IOException e) {
+      UltraEconomy.LOGGER.error("Error loading config file");
+      e.printStackTrace();
+      UltraEconomy.config = new Config();
     }
-
-
   }
 
   public void writeConfig() {
-    Gson gson = Utils.newGson();
-    String data = gson.toJson(this);
-    Utils.writeFileAsync(UltraEconomy.PATH, FILE_NAME, data);
+    Path filePath = Utils.getAbsolutePath(UltraEconomy.PATH).toPath().resolve(FILE_NAME);
+    try {
+      UtilsFile.write(filePath, this);
+    } catch (IOException e) {
+      UltraEconomy.LOGGER.error("Error writing config file");
+      e.printStackTrace();
+    }
   }
 }

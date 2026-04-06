@@ -2,6 +2,7 @@ package com.kingpixel.ultraeconomy.commands.base;
 
 import com.kingpixel.cobbleutils.api.PermissionApi;
 import com.kingpixel.cobbleutils.command.suggests.CobbleUtilsSuggests;
+import com.kingpixel.cobbleutils.util.AdventureTranslator;
 import com.kingpixel.cobbleutils.util.PlayerUtils;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.api.UltraEconomyApi;
@@ -16,7 +17,6 @@ import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -57,14 +57,16 @@ public class PayCommand {
                   .executes(context -> {
                     var executor = context.getSource().getPlayer();
                     if (executor == null) {
-                      context.getSource().sendError(Text.literal("§cOnly players can execute this command"));
+                      context.getSource().sendError(
+                        AdventureTranslator.toNative(UltraEconomy.lang.getMessageOnlyPlayers()));
                       return 0;
                     }
                     if (PlayerUtils.hasCooldownCommand(executor, "ultraeconomy.command.pay", UltraEconomy.config.getCommandCooldown()))
                       return 0;
                     var target = StringArgumentType.getString(context, "player");
                     if (!UltraEconomyApi.existsPlayerWithName(target)) {
-                      context.getSource().sendMessage(Text.literal("§cPlayer not found"));
+                      UltraEconomy.lang.getMessagePlayerNotFound().sendMessage(
+                        executor, UltraEconomy.lang.getPrefix(), false);
                       return 0;
                     }
                     var currencyId = StringArgumentType.getString(context, "currency");

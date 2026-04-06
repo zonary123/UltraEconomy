@@ -4,7 +4,6 @@ import ca.landonjw.gooeylibs2.api.UIManager;
 import ca.landonjw.gooeylibs2.api.button.GooeyButton;
 import ca.landonjw.gooeylibs2.api.page.GooeyPage;
 import ca.landonjw.gooeylibs2.api.template.types.ChestTemplate;
-import com.kingpixel.cobbleutils.CobbleUtils;
 import com.kingpixel.cobbleutils.Model.ItemModel;
 import com.kingpixel.cobbleutils.Model.Rectangle;
 import com.kingpixel.cobbleutils.util.AdventureTranslator;
@@ -79,7 +78,7 @@ public class BalTopMenu {
         .build();
 
 
-      CobbleUtils.server.execute(() -> UIManager.openUIForcefully(player, pageMenu));
+      UltraEconomy.server.execute(() -> UIManager.openUIForcefully(player, pageMenu));
     });
   }
 

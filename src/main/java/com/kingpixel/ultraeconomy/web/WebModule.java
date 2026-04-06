@@ -16,5 +16,6 @@ public class WebModule {
 
   public synchronized void stop() {
     if (webServer != null) webServer.stop();
+    started = false;
   }
 }

@@ -1,24 +1,34 @@
+const fmt = new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+
+const BADGE_COLORS = ['badge-emerald', 'badge-gold', 'badge-blue', 'badge-gray']
+
+/**
+ * Player card showing head, name, and balance badges.
+ */
 export function Card (playerData) {
+  const balances = playerData.balances || {}
+  const entries = Object.entries(balances)
+  const badges = entries.slice(0, 3).map(([currency, amount], i) =>
+    `<span class="badge ${BADGE_COLORS[i] || 'badge-gray'}">${currency} ${fmt.format(amount)}</span>`
+  ).join('')
+
   return `
-    <a href="/player/${playerData.playerUUID}"
-      class="
-        player-card
-        flex items-center
-        bg-gray-800 hover:bg-gray-700
-        text-gray-100
-        rounded-xl p-4
-        transition-transform transform hover:-translate-y-1
-        gap-4 w-full
-        focus:outline-none focus:ring-2 focus:ring-blue-500
-        shadow-[0_4px_15px_rgba(59,130,246,0.5)]
-        hover:shadow-[0_6px_20px_rgba(59,130,246,0.7)]
-      "
-    >
+    <a href="/player/${playerData.playerUUID}" data-link class="player-card">
       <img
-        src="https://minotar.net/helm/${playerData.playerName}/600.png"
-        class="w-20 h-20 rounded-lg flex-shrink-0"
+        src="https://minotar.net/helm/${encodeURIComponent(playerData.playerName)}/112.png"
+        alt="${playerData.playerName}"
+        class="player-avatar"
+        loading="lazy"
+        width="56" height="56"
       />
-      <h3 class="text-lg font-semibold truncate">${playerData.playerName}</h3>
+      <div class="player-info">
+        <div class="player-name">${playerData.playerName}</div>
+        <div class="player-balances">${badges || '<span class="badge badge-gray">No balances</span>'}</div>
+      </div>
     </a>
   `
+}
+
+export function PlayerCardSkeleton () {
+  return `<div class="skeleton skeleton-card"></div>`
 }

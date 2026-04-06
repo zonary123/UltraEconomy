@@ -1,158 +1,113 @@
 import { Navbar } from '../components/navbar.js'
 import { apiGet } from '../api.js'
-import { Card as playerCard } from '../components/playerCard.js'
+import { Card as PlayerCard, PlayerCardSkeleton } from '../components/playerCard.js'
 
-let currentPage = 1
 const PAGE_SIZE = 50
+let currentPage = 1
 let playersData = []
 
 export function PlayersPage () {
-  // Do not call loadPlayers() immediately, call it after DOM is inserted
-  setTimeout(() => loadPlayers(currentPage), 0)
-
   return `
     ${Navbar()}
-
-    <div class="players_container container">
-
-      <!-- Top Buttons -->
-      <div class="flex justify-center mt-4 mb-4 gap-2">
-        <button id="prevTop" onclick="prevPage()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-          Previous
-        </button>
-        <button id="nextTop" onclick="nextPage()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-          Next
-        </button>
-      </div>
-
+    <div class="container page">
       <!-- Search -->
-      <div class="player_search mb-4 flex items-center gap-2 rounded-lg bg-gray-800 p-3">
-        <span class="material-icons text-gray-400">search</span>
-        <input
-          id="searchInput"
-          type="text"
-          placeholder="Search player and press Enter..."
-          onkeydown="handleSearch(event)"
-          class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+      <div class="mb-2">
+        <div class="input-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input id="searchInput" class="input-field" type="text" placeholder="Search player by name and press Enter…">
+        </div>
       </div>
 
-      <!-- Players container -->
-      <div id="players" class="grid gap-4">
-        <div>Loading...</div>
+      <!-- Players grid -->
+      <div id="players" class="players-grid">
+        ${Array(8).fill(PlayerCardSkeleton()).join('')}
       </div>
 
-      <!-- Bottom Buttons -->
-      <div class="flex justify-center mt-4 mb-4 gap-2">
-        <button id="prevBottom" onclick="prevPage()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-          Previous
-        </button>
-        <button id="nextBottom" onclick="nextPage()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-          Next
-        </button>
-      </div>
-
+      <!-- Pagination -->
+      <div id="pagination" class="pagination"></div>
     </div>
   `
 }
 
-/* ===========================
-   Load Players from API
-=========================== */
+PlayersPage.afterRender = function () {
+  currentPage = 1
+  loadPlayers(currentPage)
+
+  const input = document.getElementById('searchInput')
+  if (input) {
+    input.addEventListener('keydown', handleSearch)
+    input.focus()
+  }
+}
+
 async function loadPlayers (page) {
   const container = document.getElementById('players')
   if (!container) return
 
-  container.innerHTML = '<div>Loading...</div>'
-
   try {
-    const data = await apiGet(`http://localhost:8080/api/players?page=${page}`)
+    const data = await apiGet(`/api/players?page=${page}`)
 
     if (!Array.isArray(data)) {
-      container.innerHTML = '<div>Invalid data</div>'
+      container.innerHTML = '<div class="state-box"><p>Invalid response</p></div>'
       return
     }
 
     playersData = data
     renderPlayers()
-    updateButtons()
+    renderPagination()
   } catch (err) {
-    container.innerHTML = '<div>Error loading players</div>'
+    container.innerHTML = '<div class="state-box"><p>Error loading players</p></div>'
     console.error(err)
   }
 }
 
-/* ===========================
-   Render Players
-=========================== */
 function renderPlayers () {
   const container = document.getElementById('players')
   if (!container) return
 
   if (!playersData.length) {
-    container.innerHTML = '<div>No players found</div>'
+    container.innerHTML = '<div class="state-box"><p>No players found</p></div>'
     return
   }
 
-  container.innerHTML = playersData.map(player => playerCard(player)).join('')
+  container.innerHTML = playersData.map(p => PlayerCard(p)).join('')
 }
 
-/* ===========================
-   Pagination buttons
-=========================== */
-function updateButtons () {
+function renderPagination () {
+  const el = document.getElementById('pagination')
+  if (!el) return
+
   const hasPrev = currentPage > 1
-  const hasNext = playersData.length === PAGE_SIZE
+  const hasNext = playersData.length >= PAGE_SIZE
 
-  toggleButton('prevTop', hasPrev)
-  toggleButton('prevBottom', hasPrev)
-  toggleButton('nextTop', hasNext)
-  toggleButton('nextBottom', hasNext)
+  el.innerHTML = `
+    <button id="prevBtn" class="btn btn-ghost btn-sm" ${hasPrev ? '' : 'disabled'}>← Previous</button>
+    <span class="page-info">Page ${currentPage}</span>
+    <button id="nextBtn" class="btn btn-ghost btn-sm" ${hasNext ? '' : 'disabled'}>Next →</button>
+  `
+
+  const prev = document.getElementById('prevBtn')
+  const next = document.getElementById('nextBtn')
+  if (prev) prev.addEventListener('click', () => { if (currentPage > 1) { currentPage--; loadPlayers(currentPage) } })
+  if (next) next.addEventListener('click', () => { if (hasNext) { currentPage++; loadPlayers(currentPage) } })
 }
 
-function toggleButton (id, show) {
-  const btn = document.getElementById(id)
-  if (!btn) return
-  btn.style.display = show ? 'inline-block' : 'none'
-}
-
-/* ===========================
-   Pagination actions
-=========================== */
-window.nextPage = () => {
-  if (playersData.length < PAGE_SIZE) return
-  currentPage++
-  loadPlayers(currentPage)
-}
-
-window.prevPage = () => {
-  if (currentPage <= 1) return
-  currentPage--
-  loadPlayers(currentPage)
-}
-
-/* ===========================
-   Search player
-=========================== */
-window.handleSearch = async event => {
-  if (event.key !== 'Enter') return
-
-  const name = event.target.value.trim()
+async function handleSearch (e) {
+  if (e.key !== 'Enter') return
+  const name = e.target.value.trim()
   if (!name) return
 
+  e.target.disabled = true
   try {
-    // Esperamos la respuesta de la API
     const player = await apiGet(`/api/player/${encodeURIComponent(name)}`)
-
-    if (!player || !player.playerUUID) {
-      alert('Player not found')
-      return
+    if (player && player.playerUUID) {
+      history.pushState(null, null, `/player/${player.playerUUID}`)
+      const { renderRoute } = await import('../router.js')
+      renderRoute()
     }
-
-    // Navegar a la página del jugador usando UUID
-    window.location.href = `/player/${player.playerUUID}`
-  } catch (err) {
-    console.error(err)
-    alert('Error fetching player')
+  } catch {
+    e.target.classList.add('error')
+    setTimeout(() => { e.target.classList.remove('error') }, 1500)
   }
+  e.target.disabled = false
 }

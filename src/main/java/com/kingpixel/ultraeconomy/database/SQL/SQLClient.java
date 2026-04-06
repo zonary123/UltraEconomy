@@ -3,7 +3,7 @@ package com.kingpixel.ultraeconomy.database.SQL;
 import com.kingpixel.cobbleutils.CobbleUtils;
 import com.kingpixel.cobbleutils.Model.DataBaseConfig;
 import com.kingpixel.cobbleutils.Model.DataBaseType;
-import com.kingpixel.ultraeconomy.api.UltraEconomyApi;
+import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.config.Currencies;
 import com.kingpixel.ultraeconomy.database.DatabaseClient;
 import com.kingpixel.ultraeconomy.database.DatabaseFactory;
@@ -11,6 +11,7 @@ import com.kingpixel.ultraeconomy.database.TransactionType;
 import com.kingpixel.ultraeconomy.exceptions.DatabaseConnectionException;
 import com.kingpixel.ultraeconomy.exceptions.UnknownAccountException;
 import com.kingpixel.ultraeconomy.models.Account;
+import com.kingpixel.ultraeconomy.models.BackupInfo;
 import com.kingpixel.ultraeconomy.models.Currency;
 import com.kingpixel.ultraeconomy.models.Transaction;
 import com.zaxxer.hikari.HikariDataSource;
@@ -18,7 +19,12 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.*;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
@@ -31,7 +37,7 @@ public class SQLClient extends DatabaseClient {
   private HikariDataSource dataSource;
   private ScheduledExecutorService transactionExecutor;
   private ExecutorService asyncExecutor;
-  private boolean runningTransactions = false;
+  private volatile boolean runningTransactions = false;
 
 
   @Override
@@ -41,7 +47,7 @@ public class SQLClient extends DatabaseClient {
       SQLSentences.Data data = SQLSentences.configure();
       asyncExecutor = data.getService();
       dataSource = data.getDataSource();
-      CobbleUtils.LOGGER.info("Connected to " + config.getType() + " database at " + config.getUrl());
+      UltraEconomy.LOGGER.info("Connected to " + config.getType() + " database at " + config.getUrl());
 
       // Inicialización
       initTables(config.getType());
@@ -54,7 +60,7 @@ public class SQLClient extends DatabaseClient {
       });
 
       runningTransactions = true;
-      transactionExecutor.scheduleAtFixedRate(this::checkAndApplyTransactions, 0, 2, TimeUnit.SECONDS);
+      transactionExecutor.scheduleWithFixedDelay(this::checkAndApplyTransactions, 0, 2, TimeUnit.SECONDS);
 
     } catch (Exception e) {
       throw new DatabaseConnectionException(config.getType().name());
@@ -68,7 +74,7 @@ public class SQLClient extends DatabaseClient {
     if (transactionExecutor != null) CobbleUtils.shutdownAndAwait(transactionExecutor);
     if (asyncExecutor != null) CobbleUtils.shutdownAndAwait(asyncExecutor);
     if (dataSource != null && !dataSource.isClosed()) dataSource.close();
-    CobbleUtils.LOGGER.info("Disconnected from database.");
+    UltraEconomy.LOGGER.info("Disconnected from database.");
   }
 
   @Override
@@ -125,25 +131,34 @@ public class SQLClient extends DatabaseClient {
   }
 
   private void saveAccount(Account account) {
+    if (account == null) {
+      UltraEconomy.LOGGER.warn("Tried to save a null account.");
+      return;
+    }
     try (Connection conn = dataSource.getConnection()) {
       conn.setAutoCommit(false);
-      try (PreparedStatement stmt = conn.prepareStatement(SQLSentences.insertAccount())) {
-        stmt.setString(1, account.getPlayerUUID().toString());
-        stmt.setString(2, account.getPlayerName());
-        stmt.executeUpdate();
-      }
-      for (Map.Entry<String, BigDecimal> entry : account.getBalances().entrySet()) {
-        try (PreparedStatement balStmt = conn.prepareStatement(SQLSentences.insertBalance())) {
-          balStmt.setString(1, account.getPlayerUUID().toString());
-          balStmt.setString(2, entry.getKey());
-          balStmt.setBigDecimal(3, entry.getValue());
-          balStmt.executeUpdate();
+      try {
+        try (PreparedStatement stmt = conn.prepareStatement(SQLSentences.insertAccount())) {
+          stmt.setString(1, account.getPlayerUUID().toString());
+          stmt.setString(2, account.getPlayerName());
+          stmt.executeUpdate();
         }
+        for (Map.Entry<String, BigDecimal> entry : account.getBalances().entrySet()) {
+          try (PreparedStatement balStmt = conn.prepareStatement(SQLSentences.insertBalance())) {
+            balStmt.setString(1, account.getPlayerUUID().toString());
+            balStmt.setString(2, entry.getKey());
+            balStmt.setBigDecimal(3, entry.getValue());
+            balStmt.executeUpdate();
+          }
+        }
+        conn.commit();
+        account.markClean();
+      } catch (SQLException e) {
+        conn.rollback();
+        throw e;
       }
-      conn.commit();
     } catch (SQLException e) {
-      CobbleUtils.LOGGER.error("Error saving account " + account.getPlayerUUID());
-      e.printStackTrace();
+      UltraEconomy.LOGGER.error("Error saving account " + account.getPlayerUUID(), e);
     }
   }
 
@@ -164,14 +179,14 @@ public class SQLClient extends DatabaseClient {
   @Override
   public boolean removeBalance(UUID uuid, Currency currency, BigDecimal amount) {
     Account account = getCachedAccount(uuid);
-    boolean result = false;
     if (account == null) {
-      addTransaction(uuid, currency, amount, TransactionType.WITHDRAW, false);
-      result = true;
-    } else {
-      result = account.removeBalance(currency, amount);
-      if (result) addTransaction(uuid, currency, amount, TransactionType.WITHDRAW, true);
+      // Player not cached — load from DB to verify balance before withdrawing.
+      // Blindly queueing a WITHDRAW would return true without checking funds.
+      account = getAccount(uuid);
+      if (account == null) return false;
     }
+    boolean result = account.removeBalance(currency, amount);
+    if (result) addTransaction(uuid, currency, amount, TransactionType.WITHDRAW, true);
     return result;
   }
 
@@ -194,20 +209,23 @@ public class SQLClient extends DatabaseClient {
         saveBalance(uuid, currency, amount);
         DatabaseFactory.ACCOUNTS.invalidate(uuid);
       } catch (SQLException e) {
-        CobbleUtils.LOGGER.error("Error saving balance for " + uuid);
-        e.printStackTrace();
+        UltraEconomy.LOGGER.error("Error saving balance for " + uuid, e);
       }
     });
   }
 
   @Override
   public BigDecimal getBalance(UUID uuid, Currency currency) {
-    return getAccount(uuid).getBalance(currency);
+    Account account = getAccount(uuid);
+    if (account == null) return null;
+    return account.getBalance(currency);
   }
 
   @Override
   public boolean hasEnoughBalance(UUID uuid, Currency currency, BigDecimal amount) {
-    return getAccount(uuid).hasEnoughBalance(currency, amount);
+    Account account = getAccount(uuid);
+    if (account == null) return false;
+    return account.hasEnoughBalance(currency, amount);
   }
 
   @Override
@@ -232,8 +250,7 @@ public class SQLClient extends DatabaseClient {
         topAccounts.add(account);
       }
     } catch (SQLException e) {
-      CobbleUtils.LOGGER.error("Error fetching top balances");
-      e.printStackTrace();
+      UltraEconomy.LOGGER.error("Error fetching top balances", e);
     }
 
     return topAccounts;
@@ -247,8 +264,7 @@ public class SQLClient extends DatabaseClient {
       ResultSet rs = stmt.executeQuery();
       return rs.next();
     } catch (SQLException e) {
-      CobbleUtils.LOGGER.error("Error checking existence of player with UUID " + uuid);
-      e.printStackTrace();
+      UltraEconomy.LOGGER.error("Error checking existence of player with UUID " + uuid, e);
       return false;
     }
   }
@@ -266,25 +282,190 @@ public class SQLClient extends DatabaseClient {
         stmt.setBoolean(5, processed);
         stmt.executeUpdate();
       } catch (SQLException e) {
-        CobbleUtils.LOGGER.error("Error adding transaction for " + uuid);
-        e.printStackTrace();
+        UltraEconomy.LOGGER.error("Error adding transaction for " + uuid, e);
       }
     });
   }
 
   @Override
   public CompletableFuture<?> createBackUp() {
-    return CompletableFuture.completedFuture(null);
+    return CompletableFuture.supplyAsync(() -> {
+      UUID backupUUID = UUID.randomUUID();
+      Path backupDir = Path.of(UltraEconomy.PATH, "backups", "sql");
+      try {
+        Files.createDirectories(backupDir);
+
+        // Export all accounts with balances
+        List<Map<String, Object>> accountsList = new ArrayList<>();
+        try (Connection conn = dataSource.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT uuid, player_name FROM accounts")) {
+          while (rs.next()) {
+            String uuid = rs.getString("uuid");
+            String playerName = rs.getString("player_name");
+            Map<String, BigDecimal> balances = new HashMap<>();
+            try (PreparedStatement balStmt = conn.prepareStatement(SQLSentences.selectBalancesByUUID())) {
+              balStmt.setString(1, uuid);
+              ResultSet balRs = balStmt.executeQuery();
+              while (balRs.next()) {
+                balances.put(balRs.getString("currency_id"), balRs.getBigDecimal(KEY_AMOUNT));
+              }
+            }
+            Map<String, Object> accountMap = new LinkedHashMap<>();
+            accountMap.put("uuid", uuid);
+            accountMap.put("player_name", playerName);
+            accountMap.put("balances", balances);
+            accountsList.add(accountMap);
+          }
+        }
+
+        // Build backup metadata
+        Map<String, Object> backup = new LinkedHashMap<>();
+        backup.put("backup_uuid", backupUUID.toString());
+        backup.put("created_at", Instant.now().toString());
+        backup.put("account_count", accountsList.size());
+        backup.put("accounts", accountsList);
+
+        // Write to JSON file
+        com.google.gson.Gson gson = new com.google.gson.GsonBuilder().setPrettyPrinting().create();
+        Path backupFile = backupDir.resolve(backupUUID + ".json");
+        Files.writeString(backupFile, gson.toJson(backup), StandardCharsets.UTF_8);
+
+        if (UltraEconomy.config.isDebug()) {
+          UltraEconomy.LOGGER.info("SQL backup created: " + backupUUID + " (" + accountsList.size() + " accounts)");
+        }
+      } catch (Exception e) {
+        UltraEconomy.LOGGER.error("Error creating SQL backup", e);
+      }
+      cleanOldBackUps();
+      return null;
+    }, asyncExecutor);
   }
 
   @Override
-  public void loadBackUp(UUID uuid) {
+  public void loadBackUp(UUID backupUUID) {
+    asyncExecutor.submit(() -> {
+      Path backupFile = Path.of(UltraEconomy.PATH, "backups", "sql", backupUUID + ".json");
+      if (!Files.exists(backupFile)) {
+        UltraEconomy.LOGGER.warn("Backup file not found: " + backupUUID);
+        return;
+      }
+      try {
+        String json = Files.readString(backupFile, StandardCharsets.UTF_8);
+        com.google.gson.Gson gson = new com.google.gson.Gson();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> backup = gson.fromJson(json, Map.class);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> accounts = (List<Map<String, Object>>) backup.get("accounts");
 
+        if (accounts == null) {
+          UltraEconomy.LOGGER.error("Backup corrupted: no accounts found in " + backupUUID);
+          return;
+        }
+
+        try (Connection conn = dataSource.getConnection()) {
+          conn.setAutoCommit(false);
+          try {
+            // Clear existing data
+            try (Statement stmt = conn.createStatement()) {
+              stmt.executeUpdate("DELETE FROM balances");
+              stmt.executeUpdate("DELETE FROM accounts");
+            }
+
+            // Restore accounts and balances
+            for (Map<String, Object> accountMap : accounts) {
+              String uuid = (String) accountMap.get("uuid");
+              String playerName = (String) accountMap.get("player_name");
+
+              try (PreparedStatement stmt = conn.prepareStatement(SQLSentences.insertAccount())) {
+                stmt.setString(1, uuid);
+                stmt.setString(2, playerName);
+                stmt.executeUpdate();
+              }
+
+              @SuppressWarnings("unchecked")
+              Map<String, Object> balances = (Map<String, Object>) accountMap.get("balances");
+              if (balances != null) {
+                for (Map.Entry<String, Object> entry : balances.entrySet()) {
+                  BigDecimal amount = new BigDecimal(entry.getValue().toString());
+                  try (PreparedStatement balStmt = conn.prepareStatement(SQLSentences.insertBalance())) {
+                    balStmt.setString(1, uuid);
+                    balStmt.setString(2, entry.getKey());
+                    balStmt.setBigDecimal(3, amount);
+                    balStmt.executeUpdate();
+                  }
+                }
+              }
+            }
+            conn.commit();
+            DatabaseFactory.ACCOUNTS.invalidateAll();
+            UltraEconomy.LOGGER.info("SQL backup restored: " + backupUUID + " (" + accounts.size() + " accounts)");
+          } catch (SQLException e) {
+            conn.rollback();
+            throw e;
+          }
+        }
+      } catch (Exception e) {
+        UltraEconomy.LOGGER.error("Error restoring SQL backup: " + backupUUID, e);
+      }
+    });
   }
 
   @Override
   protected void cleanOldBackUps() {
+    try {
+      Path backupDir = Path.of(UltraEconomy.PATH, "backups", "sql");
+      if (!Files.exists(backupDir)) return;
 
+      long retentionMillis = UltraEconomy.config.getRetentionBackUps().toMillis();
+      Instant cutoff = Instant.now().minusMillis(retentionMillis);
+
+      try (DirectoryStream<Path> stream = Files.newDirectoryStream(backupDir, "*.json")) {
+        for (Path file : stream) {
+          Instant modified = Files.getLastModifiedTime(file).toInstant();
+          if (modified.isBefore(cutoff)) {
+            Files.delete(file);
+            if (UltraEconomy.config.isDebug()) {
+              UltraEconomy.LOGGER.info("Deleted old SQL backup: " + file.getFileName());
+            }
+          }
+        }
+      }
+    } catch (Exception e) {
+      UltraEconomy.LOGGER.error("Error cleaning old SQL backups", e);
+    }
+  }
+
+  @Override
+  public List<BackupInfo> getBackups() {
+    List<BackupInfo> backups = new ArrayList<>();
+    Path backupDir = Path.of(UltraEconomy.PATH, "backups", "sql");
+    if (!Files.exists(backupDir)) return backups;
+
+    com.google.gson.Gson gson = new com.google.gson.Gson();
+    try (DirectoryStream<Path> stream = Files.newDirectoryStream(backupDir, "*.json")) {
+      for (Path file : stream) {
+        try {
+          String json = Files.readString(file, StandardCharsets.UTF_8);
+          @SuppressWarnings("unchecked")
+          Map<String, Object> data = gson.fromJson(json, Map.class);
+          BackupInfo info = BackupInfo.builder()
+            .backupUUID(UUID.fromString((String) data.get("backup_uuid")))
+            .createdAt(Instant.parse((String) data.get("created_at")))
+            .accountCount(((Number) data.get("account_count")).intValue())
+            .transactionCount(0)
+            .build();
+          backups.add(info);
+        } catch (Exception e) {
+          UltraEconomy.LOGGER.warn("Could not read backup file: " + file.getFileName(), e);
+        }
+      }
+    } catch (Exception e) {
+      UltraEconomy.LOGGER.error("Error listing SQL backups", e);
+    }
+
+    backups.sort(Comparator.comparing(BackupInfo::getCreatedAt).reversed());
+    return backups;
   }
 
   @Override
@@ -316,8 +497,7 @@ public class SQLClient extends DatabaseClient {
         accounts.add(new Account(uuid, playerName, balances));
       }
     } catch (SQLException e) {
-      CobbleUtils.LOGGER.error("Error fetching accounts");
-      e.printStackTrace();
+      UltraEconomy.LOGGER.error("Error fetching accounts", e);
     }
 
     return accounts;
@@ -354,8 +534,7 @@ public class SQLClient extends DatabaseClient {
         transactions.add(transaction);
       }
     } catch (SQLException e) {
-      CobbleUtils.LOGGER.error("Error fetching transactions for " + uuid);
-      e.printStackTrace();
+      UltraEconomy.LOGGER.error("Error fetching transactions for " + uuid, e);
     }
 
     return transactions;
@@ -387,8 +566,7 @@ public class SQLClient extends DatabaseClient {
         return account;
       }
     } catch (SQLException e) {
-      CobbleUtils.LOGGER.error("Error fetching account by name " + name);
-      e.printStackTrace();
+      UltraEconomy.LOGGER.error("Error fetching account by name " + name, e);
     }
 
     return null;
@@ -397,46 +575,100 @@ public class SQLClient extends DatabaseClient {
 
   private void checkAndApplyTransactions() {
     if (!runningTransactions) return;
+    if (UltraEconomy.server == null) return;
 
-    asyncExecutor.submit(() -> {
-      try (Connection conn = dataSource.getConnection(); PreparedStatement stmt = conn.prepareStatement(SQLSentences.selectPendingTransactions())) {
+    var players = UltraEconomy.server.getPlayerManager().getPlayerList();
+    if (players.isEmpty()) return;
 
+    List<String> onlineUUIDs = players.stream()
+      .map(p -> p.getUuidAsString())
+      .toList();
+
+    // Build parameterized IN clause for online players only
+    String placeholders = String.join(",", Collections.nCopies(onlineUUIDs.size(), "?"));
+    String selectSQL = "SELECT id, account_uuid, currency_id, amount, type FROM transactions " +
+      "WHERE processed = FALSE AND account_uuid IN (" + placeholders + ") ORDER BY id";
+
+    // Row-level locking for MySQL/MariaDB/H2 to prevent duplicate processing across servers.
+    // SQLite uses file-level locking (single-server only) so FOR UPDATE is not needed/supported.
+    if (dbType != DataBaseType.SQLITE) {
+      selectSQL += " FOR UPDATE";
+    }
+
+    Set<UUID> modifiedAccounts = new HashSet<>();
+
+    try (Connection conn = dataSource.getConnection()) {
+      conn.setAutoCommit(false);
+      try (PreparedStatement stmt = conn.prepareStatement(selectSQL)) {
+        for (int i = 0; i < onlineUUIDs.size(); i++) {
+          stmt.setString(i + 1, onlineUUIDs.get(i));
+        }
         ResultSet rs = stmt.executeQuery();
+
         while (rs.next()) {
+          long id = rs.getLong("id");
           UUID uuid = UUID.fromString(rs.getString("account_uuid"));
           Account account = DatabaseFactory.ACCOUNTS.getIfPresent(uuid);
           if (account == null) continue;
 
-          long id = rs.getLong("id");
           String currencyId = rs.getString("currency_id");
           Currency currency = Currencies.getCurrency(currencyId);
-
           BigDecimal amount = rs.getBigDecimal(KEY_AMOUNT);
-          TransactionType type = rs.getString("type") != null ? TransactionType.valueOf(rs.getString("type")) : TransactionType.DEPOSIT;
 
+          TransactionType type;
+          try {
+            type = TransactionType.valueOf(rs.getString("type"));
+          } catch (IllegalArgumentException e) {
+            UltraEconomy.LOGGER.warn("Invalid transaction type for ID " + id + ", marking processed.");
+            try (PreparedStatement update = conn.prepareStatement(SQLSentences.markTransactionProcessed())) {
+              update.setLong(1, id);
+              update.executeUpdate();
+            }
+            continue;
+          }
+
+          // Apply directly to Account to AVOID creating duplicate transactions.
+          // UltraEconomyApi methods call addTransaction() internally, which would
+          // create a processed=true copy for every pending transaction processed.
           switch (type) {
-            case DEPOSIT -> UltraEconomyApi.deposit(uuid, currency.getId(), amount);
-            case WITHDRAW -> UltraEconomyApi.withdraw(uuid, currency.getId(), amount);
-            case SET -> UltraEconomyApi.setBalance(uuid, currency.getId(), amount);
+            case DEPOSIT -> account.addBalance(currency, amount);
+            case WITHDRAW -> {
+              if (!account.removeBalance(currency, amount) && UltraEconomy.config.isDebug()) {
+                UltraEconomy.LOGGER.warn("Insufficient funds for pending WITHDRAW ID " + id
+                  + " (uuid=" + uuid + ", amount=" + amount + ")");
+              }
+            }
+            case SET -> account.setBalance(currency, amount);
             default -> {
-              CobbleUtils.LOGGER.warn("Unknown transaction type for transaction ID " + id);
+              UltraEconomy.LOGGER.warn("Unhandled transaction type " + type + " for ID " + id);
               continue;
             }
           }
-          saveBalanceSafe(uuid, currency, account.getBalance(currency));
 
+          // Mark as processed inside the same transaction (still holding row lock)
           try (PreparedStatement update = conn.prepareStatement(SQLSentences.markTransactionProcessed())) {
             update.setLong(1, id);
             update.executeUpdate();
           }
 
-          DatabaseFactory.ACCOUNTS.put(uuid, account);
+          modifiedAccounts.add(uuid);
         }
-      } catch (SQLException e) {
-        CobbleUtils.LOGGER.error("Error processing transactions");
-        e.printStackTrace();
+        conn.commit();
+      } catch (Exception e) {
+        conn.rollback();
+        throw e;
       }
-    });
+    } catch (SQLException e) {
+      UltraEconomy.LOGGER.error("Error processing transactions", e);
+    }
+
+    // Persist all modified accounts to DB
+    for (UUID uuid : modifiedAccounts) {
+      Account account = DatabaseFactory.ACCOUNTS.getIfPresent(uuid);
+      if (account != null && account.isDirty()) {
+        saveOrUpdateAccount(account);
+      }
+    }
   }
 
   // Métodos privados para inicialización de tablas, índices y columna processed
@@ -528,7 +760,7 @@ public class SQLClient extends DatabaseClient {
           "account_uuid)");
         stmt.executeUpdate("CREATE INDEX if NOT EXISTS idx_transactions_timestamp ON transactions(\"timestamp\")");
       } catch (SQLException e) {
-        e.printStackTrace();
+        UltraEconomy.LOGGER.error("Error creating indexes", e);
       }
     });
   }

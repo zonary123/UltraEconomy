@@ -1,6 +1,5 @@
 package com.kingpixel.ultraeconomy.models;
 
-import com.kingpixel.cobbleutils.CobbleUtils;
 import com.kingpixel.cobbleutils.api.EconomyApi;
 import com.kingpixel.cobbleutils.command.suggests.CobbleUtilsSuggests;
 import com.kingpixel.ultraeconomy.UltraEconomy;
@@ -36,10 +35,10 @@ public class MigrationConfig {
 
     UltraEconomy.runAsync(() -> {
       long start = System.currentTimeMillis();
-      CobbleUtils.LOGGER.info("Migration started ->");
-      CobbleUtils.LOGGER.info("Order of economy uses:");
+      UltraEconomy.LOGGER.info("Migration started ->");
+      UltraEconomy.LOGGER.info("Order of economy uses:");
       for (var use : migrations) {
-        CobbleUtils.LOGGER.info("- " + use.getEconomyId() + " -> " + use.getMigrationToCurrencyId());
+        UltraEconomy.LOGGER.info("- " + use.getEconomyId() + " -> " + use.getMigrationToCurrencyId());
       }
       var playerUUIDs = CobbleUtilsSuggests.SUGGESTS_PLAYER_OFFLINE_AND_ONLINE.getPlayerUUIDs();
       var userCache = UltraEconomy.server.getUserCache();
@@ -64,31 +63,30 @@ public class MigrationConfig {
           BigDecimal balance = EconomyApi.getBalance(uuid, migration.toEconomyUse());
 
           if (balance == null) {
-            CobbleUtils.LOGGER.warn("Balance for player " + uuid + " is null, skipping");
+            UltraEconomy.LOGGER.warn("Balance for player " + uuid + " is null, skipping");
             continue;
           }
 
           if (balance.compareTo(BigDecimal.ZERO) <= 0) {
-            CobbleUtils.LOGGER.info("Balance for player " + uuid + " is zero or negative, skipping");
+            UltraEconomy.LOGGER.info("Balance for player " + uuid + " is zero or negative, skipping");
             continue;
           }
 
           UltraEconomyApi.setBalance(uuid, currencyId, balance);
-          CobbleUtils.LOGGER.info("Migrated " + balance + " " + currencyId + " for player " + uuid);
+          UltraEconomy.LOGGER.info("Migrated " + balance + " " + currencyId + " for player " + uuid);
         }
 
         UltraEconomyApi.saveAccount(account);
       }
 
       long end = System.currentTimeMillis();
-      CobbleUtils.LOGGER.info("Migration took " + (end - start) + "ms. Migration finished.");
+      UltraEconomy.LOGGER.info("Migration took " + (end - start) + "ms. Migration finished.");
       active = false;
 
       try {
         UltraEconomy.config.writeConfig();
       } catch (Exception e) {
-        CobbleUtils.LOGGER.error("Failed to write UltraEconomy config after migration");
-        e.printStackTrace();
+        UltraEconomy.LOGGER.error("Failed to write UltraEconomy config after migration", e);
       }
       UltraEconomy.migrationDone = true;
     });

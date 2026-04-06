@@ -26,7 +26,7 @@ public class PlaceHolders {
       // %ultraeconomy:short_amount dollars%
       registerShortAmount();
     } catch (Exception | NoClassDefFoundError ignored) {
-      CobbleUtils.LOGGER.warn("Placeholders API not found, skipping placeholders registration.");
+      UltraEconomy.LOGGER.warn("Placeholders API not found, skipping placeholders registration.");
     }
   }
 

@@ -1,260 +1,348 @@
 import { Navbar } from '../components/navbar.js'
-import { apiGet } from '../api.js'
+import { apiGet, loadScript } from '../api.js'
 
 const PAGE_SIZE = 50
-let currentPage = 1
+const CHART_JS_URL = 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js'
+
+const money = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const dateFmt = new Intl.DateTimeFormat('en-US', { month: '2-digit', day: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+
 let allTransactions = []
 let selectedCurrency = null
 let selectedDays = 7
+let activeTypeFilter = 'ALL'
+let currentPage = 1
 let chartInstance = null
 
-const moneyFormatter = new Intl.NumberFormat('en-US', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2
-})
+const TYPE_META = {
+  DEPOSIT:  { label: 'Deposit',  dotClass: 'type-dot-deposit',  pillClass: 'pill-success', sign: '+', textClass: 'text-success' },
+  WITHDRAW: { label: 'Withdraw', dotClass: 'type-dot-withdraw', pillClass: 'pill-danger',  sign: '-', textClass: 'text-danger' },
+  SET:      { label: 'Set',      dotClass: 'type-dot-set',      pillClass: 'pill-warning', sign: '',  textClass: 'text-warning' },
+  TRANSFER: { label: 'Transfer', dotClass: 'type-dot-transfer', pillClass: 'pill-blue',    sign: '→', textClass: 'text-accent' }
+}
 
-const dateFormatter = new Intl.DateTimeFormat('en-US', {
-  year: '2-digit',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit'
-})
+/* ======================== Page Shell ======================== */
 
 export async function PlayerPage () {
   return `
     ${Navbar()}
-    <div class="mx-auto px-6 py-8 max-w-7xl">
-      <div id="playerContent" class="text-white">
-        <span class="animate-pulse text-blue-400 font-semibold text-lg">
-          Loading player...
-        </span>
+    <div class="container page">
+      <div id="playerContent">
+        <div class="detail-grid">
+          <div class="card skeleton" style="height:340px"></div>
+          <div class="card skeleton" style="height:380px"></div>
+        </div>
       </div>
     </div>
   `
 }
+
+/* ======================== After Render ======================== */
 
 PlayerPage.afterRender = async function ({ uuid }) {
   const container = document.getElementById('playerContent')
   if (!container) return
 
   try {
-    const player = await apiGet(`/api/player/${uuid}`)
-    allTransactions = await apiGet(`/api/transactions/player/${uuid}`)
+    const [player, transactions] = await Promise.all([
+      apiGet(`/api/player/${uuid}`),
+      apiGet(`/api/transactions/player/${uuid}?limit=500`)
+    ])
 
     if (!player) {
-      container.innerHTML = `<p class="text-red-500 text-center text-lg">Player not found</p>`
+      container.innerHTML = '<div class="state-box"><p>Player not found</p></div>'
       return
     }
 
-    // BALANCES
+    allTransactions = transactions || []
+
+    /* Balance rows */
     const balanceRows = Object.entries(player.balances || {})
-      .map(
-        ([currency, amount]) => `
-          <tr class="border-b border-gray-700 hover:bg-gray-700">
-            <td class="px-4 py-2 font-medium text-blue-200">${currency}</td>
-            <td class="px-4 py-2 text-right text-gray-200">${moneyFormatter.format(
-              amount
-            )}</td>
-          </tr>
-        `
-      )
-      .join('')
+      .map(([cur, amt]) => `
+        <tr>
+          <td class="font-mono text-accent">${cur}</td>
+          <td class="text-right text-gold font-mono">${money.format(amt)}</td>
+        </tr>
+      `).join('')
 
     container.innerHTML = `
-      <!-- DASHBOARD TOP -->
-      <div class="flex flex-col lg:flex-row gap-8 mb-10">
-
-        <!-- LEFT: PLAYER INFO -->
-        <div class="flex-1 bg-gray-800 p-8 rounded-2xl shadow-lg shadow-blue-500/30 flex flex-col items-center space-y-6">
-          <img src="https://minotar.net/helm/${player.playerName}/200.png"
-            class="rounded-lg border-2 border-blue-400 w-36 h-36"/>
-          <h2 class="text-3xl font-bold text-blue-300">${player.playerName}</h2>
-          <table class="w-full text-lg mt-4">
-            <thead>
-              <tr class="border-b border-gray-600 text-blue-300">
-                <th class="px-4 py-2 text-left">Currency</th>
-                <th class="px-4 py-2 text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${balanceRows}
-            </tbody>
-          </table>
-        </div>
-
-        <!-- RIGHT: MONEY FLOW -->
-        <div class="flex-1 bg-gray-800 p-8 rounded-2xl shadow-lg shadow-blue-500/30 flex flex-col">
-          <h3 class="text-2xl font-semibold text-blue-300 mb-4 text-center">
-            Money Flow per Hour
-          </h3>
-          <div class="flex flex-wrap gap-4 justify-center mb-4">
-            <select id="currencySelect" class="bg-gray-700 text-white px-5 py-2 rounded text-lg font-medium"></select>
-            <select id="daysSelect" class="bg-gray-700 text-white px-5 py-2 rounded text-lg font-medium">
-              <option value="1">Today</option>
-              <option value="3">Last 3 days</option>
-              <option value="7" selected>Last 7 days</option>
-              <option value="30">Last 30 days</option>
-              <option value="90">Last 90 days</option>
-            </select>
+      <!-- Top: Profile + Chart -->
+      <div class="detail-grid mb-3">
+        <!-- Profile Card -->
+        <div class="card profile-card">
+          <img src="https://minotar.net/helm/${encodeURIComponent(player.playerName)}/192.png"
+               alt="${player.playerName}" class="player-avatar" width="96" height="96"/>
+          <h2 class="profile-name">${player.playerName}</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Currency</th><th class="text-right">Balance</th></tr></thead>
+              <tbody>${balanceRows || '<tr><td colspan="2" class="text-muted text-center">No balances</td></tr>'}</tbody>
+            </table>
           </div>
-          <canvas id="moneyChart" class="flex-1 min-h-[350px]"></canvas>
         </div>
 
+        <!-- Chart Card -->
+        <div class="card chart-card">
+          <div class="section-header">
+            <h3 class="section-title" style="margin:0">Money Flow</h3>
+            <div class="flex gap-1">
+              <select id="currencySelect" class="select"></select>
+              <select id="daysSelect" class="select">
+                <option value="1">Today</option>
+                <option value="3">3 days</option>
+                <option value="7" selected>7 days</option>
+                <option value="30">30 days</option>
+                <option value="90">90 days</option>
+              </select>
+            </div>
+          </div>
+          <div id="summaryStats" class="summary-grid mb-2"></div>
+          <div class="chart-container">
+            <canvas id="moneyChart"></canvas>
+          </div>
+        </div>
       </div>
 
-      <!-- TRANSACTIONS -->
-      <div class="bg-gray-800 p-6 rounded-2xl shadow-lg shadow-blue-500/30">
-        <h3 class="text-2xl font-semibold text-blue-300 mb-4 text-center">
-          Transactions
-        </h3>
-        <div class="overflow-x-auto max-h-[500px]">
-          <table class="w-full text-lg text-gray-300">
-            <thead class="border-b border-gray-600 text-blue-300 sticky top-0 bg-gray-800">
-              <tr>
-                <th class="px-4 py-2 text-left">Date</th>
-                <th class="px-4 py-2 text-center">Type</th>
-                <th class="px-4 py-2 text-left">Currency</th>
-                <th class="px-4 py-2 text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody id="transactionsTable"></tbody>
-          </table>
+      <!-- Transactions -->
+      <div class="card">
+        <div class="filter-bar">
+          <h3 class="section-title" style="margin:0">Transactions</h3>
+          <div id="typePills" class="filter-pills"></div>
         </div>
-        <div id="pagination" class="flex justify-center items-center gap-6 mt-6 text-lg"></div>
+        <div class="table-wrap">
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th class="text-center">Type</th>
+                  <th>Currency</th>
+                  <th class="text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody id="txBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div id="txPagination" class="pagination"></div>
       </div>
     `
 
-    initCurrencySelector()
-    initDaysSelector()
-    renderTransactionsTable()
-    renderMoneyChart()
+    initSelectors()
+    renderTypePills()
+    renderSummary()
+    renderTransactions()
+    await initChart()
   } catch (err) {
     console.error(err)
-    container.innerHTML = `<p class="text-red-500 text-center text-lg">Error loading player data</p>`
+    container.innerHTML = '<div class="state-box"><p>Error loading player data</p></div>'
+  }
+
+  /* Cleanup for router */
+  return () => {
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null }
   }
 }
 
-// Selector and rendering functions same as before
-function initCurrencySelector () {
-  const select = document.getElementById('currencySelect')
+/* ======================== Selectors ======================== */
+
+function initSelectors () {
+  const curSelect = document.getElementById('currencySelect')
+  const daysSelect = document.getElementById('daysSelect')
+
   const currencies = [...new Set(allTransactions.map(t => t.currency))]
   selectedCurrency = currencies[0] || ''
-  select.innerHTML = currencies
-    .map(c => `<option value="${c}">${c}</option>`)
-    .join('')
-  select.value = selectedCurrency
-  select.onchange = () => {
-    selectedCurrency = select.value
+  curSelect.innerHTML = currencies.map(c => `<option value="${c}">${c}</option>`).join('')
+  curSelect.value = selectedCurrency
+  daysSelect.value = selectedDays
+
+  const onChange = () => {
+    selectedCurrency = curSelect.value
+    selectedDays = parseInt(daysSelect.value)
     currentPage = 1
-    renderTransactionsTable()
-    renderMoneyChart()
+    renderSummary()
+    renderTransactions()
+    renderChart()
   }
+
+  curSelect.addEventListener('change', onChange)
+  daysSelect.addEventListener('change', onChange)
 }
 
-function initDaysSelector () {
-  const select = document.getElementById('daysSelect')
-  select.value = selectedDays
-  select.onchange = () => {
-    selectedDays = parseInt(select.value)
+/* ======================== Type Filter Pills ======================== */
+
+function renderTypePills () {
+  const el = document.getElementById('typePills')
+  if (!el) return
+
+  const types = ['ALL', ...Object.keys(TYPE_META)]
+  el.innerHTML = types.map(t => {
+    const meta = TYPE_META[t]
+    const pillClass = meta ? meta.pillClass : ''
+    const active = t === activeTypeFilter ? ' active' : ''
+    return `<button class="pill ${pillClass}${active}" data-type="${t}">${meta ? meta.label : 'All'}</button>`
+  }).join('')
+
+  el.addEventListener('click', (e) => {
+    const btn = e.target.closest('.pill')
+    if (!btn) return
+    activeTypeFilter = btn.dataset.type
     currentPage = 1
-    renderTransactionsTable()
-    renderMoneyChart()
-  }
+    el.querySelectorAll('.pill').forEach(p => p.classList.remove('active'))
+    btn.classList.add('active')
+    renderTransactions()
+  })
 }
 
-function getFilteredTransactions () {
-  const now = new Date()
-  const startDate = new Date(now)
-  startDate.setDate(now.getDate() - selectedDays + 1)
-  startDate.setHours(0, 0, 0, 0)
-  return allTransactions.filter(
-    tx =>
-      tx.currency === selectedCurrency && new Date(tx.timestamp) >= startDate
+/* ======================== Filter helpers ======================== */
+
+function getCurrencyFiltered () {
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - selectedDays + 1)
+  cutoff.setHours(0, 0, 0, 0)
+  return allTransactions.filter(tx =>
+    tx.currency === selectedCurrency && new Date(tx.timestamp) >= cutoff
   )
 }
 
-function renderTransactionsTable () {
-  const table = document.getElementById('transactionsTable')
-  const pagination = document.getElementById('pagination')
-  const filtered = getFilteredTransactions()
-  const start = (currentPage - 1) * PAGE_SIZE
-  const end = start + PAGE_SIZE
-  const pageData = filtered.slice(start, end)
+function getFiltered () {
+  const list = getCurrencyFiltered()
+  if (activeTypeFilter === 'ALL') return list
+  return list.filter(tx => tx.type === activeTypeFilter)
+}
 
-  table.innerHTML = pageData
-    .map(
-      tx => `
-    <tr class="border-b border-gray-700 hover:bg-gray-700">
-      <td class="px-4 py-2">${dateFormatter.format(new Date(tx.timestamp))}</td>
-      <td class="px-4 py-2 text-center ${tx.type === 'DEPOSIT'
-        ? 'text-green-400'
-        : tx.type === 'WITHDRAW'
-          ? 'text-red-400'
-          : 'text-yellow-400'}">${tx.type}</td>
-      <td class="px-4 py-2">${tx.currency}</td>
-      <td class="px-4 py-2 text-right">${tx.type === 'WITHDRAW'
-        ? '-'
-        : '+'}${moneyFormatter.format(tx.amount)}</td>
-    </tr>
+/* ======================== Summary Stats ======================== */
+
+function renderSummary () {
+  const el = document.getElementById('summaryStats')
+  if (!el) return
+
+  const filtered = getCurrencyFiltered()
+  let totalDeposits = 0
+  let totalWithdrawals = 0
+
+  for (const tx of filtered) {
+    if (!tx.processed) continue
+    if (tx.type === 'DEPOSIT') totalDeposits += tx.amount
+    else if (tx.type === 'WITHDRAW') totalWithdrawals += tx.amount
+  }
+
+  const net = totalDeposits - totalWithdrawals
+  const netClass = net >= 0 ? 'text-success' : 'text-danger'
+  const netSign = net >= 0 ? '+' : ''
+
+  el.innerHTML = `
+    <div class="summary-item">
+      <div class="summary-label">Deposited</div>
+      <div class="summary-value text-success">+${money.format(totalDeposits)}</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-label">Withdrawn</div>
+      <div class="summary-value text-danger">-${money.format(totalWithdrawals)}</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-label">Net Change</div>
+      <div class="summary-value ${netClass}">${netSign}${money.format(net)}</div>
+    </div>
   `
-    )
-    .join('')
+}
 
+/* ======================== Transactions Table ======================== */
+
+function renderTransactions () {
+  const tbody = document.getElementById('txBody')
+  const pagEl = document.getElementById('txPagination')
+  if (!tbody || !pagEl) return
+
+  const filtered = getFiltered()
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  pagination.innerHTML = `
-    <button class="px-4 py-2 bg-gray-700 rounded disabled:opacity-50" ${currentPage ===
-    1
-      ? 'disabled'
-      : ''} onclick="changePage(${currentPage - 1})">←</button>
-    <span>${currentPage} / ${totalPages}</span>
-    <button class="px-4 py-2 bg-gray-700 rounded disabled:opacity-50" ${currentPage ===
-    totalPages
-      ? 'disabled'
-      : ''} onclick="changePage(${currentPage + 1})">→</button>
+  if (currentPage > totalPages) currentPage = totalPages
+  const start = (currentPage - 1) * PAGE_SIZE
+  const page = filtered.slice(start, start + PAGE_SIZE)
+
+  if (!page.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted" style="padding:2rem">No transactions found</td></tr>'
+    pagEl.innerHTML = ''
+    return
+  }
+
+  tbody.innerHTML = page.map(tx => {
+    const meta = TYPE_META[tx.type] || { label: tx.type, dotClass: '', sign: '', textClass: 'text-muted' }
+    return `
+      <tr>
+        <td class="text-muted">${dateFmt.format(new Date(tx.timestamp))}</td>
+        <td class="text-center">
+          <span class="type-dot ${meta.dotClass}"></span>
+          <span class="${meta.textClass}" style="font-weight:600">${meta.label}</span>
+        </td>
+        <td>${tx.currency}</td>
+        <td class="text-right font-mono ${meta.textClass}">${meta.sign}${money.format(tx.amount)}</td>
+      </tr>
+    `
+  }).join('')
+
+  pagEl.innerHTML = `
+    <button id="txPrev" class="btn btn-ghost btn-sm" ${currentPage <= 1 ? 'disabled' : ''}>←</button>
+    <span class="page-info">${currentPage} / ${totalPages}</span>
+    <button id="txNext" class="btn btn-ghost btn-sm" ${currentPage >= totalPages ? 'disabled' : ''}>→</button>
   `
+
+  document.getElementById('txPrev')?.addEventListener('click', () => { currentPage--; renderTransactions() })
+  document.getElementById('txNext')?.addEventListener('click', () => { currentPage++; renderTransactions() })
 }
 
-window.changePage = page => {
-  currentPage = page
-  renderTransactionsTable()
+/* ======================== Chart (lazy-loaded) ======================== */
+
+async function initChart () {
+  try {
+    await loadScript(CHART_JS_URL)
+    renderChart()
+  } catch {
+    const wrapper = document.querySelector('.chart-container')
+    if (wrapper) wrapper.innerHTML = '<div class="chart-empty">Chart unavailable</div>'
+  }
 }
 
-function renderMoneyChart () {
+function renderChart () {
   const ctx = document.getElementById('moneyChart')
-  if (!ctx) return
+  if (!ctx || typeof Chart === 'undefined') return
   if (chartInstance) chartInstance.destroy()
 
-  const map = {}
-  const transactions = getFilteredTransactions()
-  const now = new Date()
-  const startDate = new Date(now)
-  startDate.setDate(now.getDate() - selectedDays + 1)
-  startDate.setHours(0, 0, 0, 0)
+  const filtered = getCurrencyFiltered()
+  const depositMap = {}
+  const withdrawMap = {}
 
-  for (const tx of transactions) {
-    if (!tx.processed || tx.type === 'SET') continue
-    const d = new Date(tx.timestamp)
-    if (d < startDate) continue
-    const key = d.toISOString().slice(0, 13) + ':00'
-    if (!map[key]) map[key] = 0
-    if (tx.type === 'DEPOSIT') map[key] += tx.amount
-    if (tx.type === 'WITHDRAW') map[key] -= tx.amount
+  for (const tx of filtered) {
+    if (!tx.processed) continue
+    const key = new Date(tx.timestamp).toISOString().slice(0, 13) + ':00'
+    if (tx.type === 'DEPOSIT') {
+      depositMap[key] = (depositMap[key] || 0) + tx.amount
+    } else if (tx.type === 'WITHDRAW') {
+      withdrawMap[key] = (withdrawMap[key] || 0) + tx.amount
+    }
   }
 
-  const entries = Object.entries(map).sort(
-    ([a], [b]) => new Date(a) - new Date(b)
-  )
-  const labels = entries.map(([k]) =>
-    new Date(k).toLocaleString('en-US', {
-      year: '2-digit',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  )
-  const values = entries.map(([, v]) => v)
+  const allKeys = [...new Set([...Object.keys(depositMap), ...Object.keys(withdrawMap)])].sort()
+
+  if (!allKeys.length) {
+    const wrapper = ctx.parentElement
+    if (wrapper) {
+      ctx.style.display = 'none'
+      if (!wrapper.querySelector('.chart-empty')) {
+        wrapper.insertAdjacentHTML('beforeend', '<div class="chart-empty">No chart data for this period</div>')
+      }
+    }
+    return
+  }
+
+  ctx.style.display = ''
+  const emptyMsg = ctx.parentElement?.querySelector('.chart-empty')
+  if (emptyMsg) emptyMsg.remove()
+
+  const labels = allKeys.map(k => dateFmt.format(new Date(k)))
+  const depositData = allKeys.map(k => depositMap[k] || 0)
+  const withdrawData = allKeys.map(k => withdrawMap[k] || 0)
+  const compact = allKeys.length > 50
 
   chartInstance = new Chart(ctx, {
     type: 'line',
@@ -262,33 +350,68 @@ function renderMoneyChart () {
       labels,
       datasets: [
         {
-          label: `Money Flow (${selectedCurrency})`,
-          data: values,
-          borderColor: '#60a5fa',
-          backgroundColor: 'rgba(96,165,250,0.2)',
-          tension: 0.3,
-          fill: true
+          label: `Deposits (${selectedCurrency})`,
+          data: depositData,
+          borderColor: '#22c55e',
+          backgroundColor: 'rgba(34,197,94,0.08)',
+          tension: 0.35,
+          fill: true,
+          pointRadius: compact ? 0 : 3,
+          pointHoverRadius: 5,
+          borderWidth: 2
+        },
+        {
+          label: `Withdrawals (${selectedCurrency})`,
+          data: withdrawData,
+          borderColor: '#ef4444',
+          backgroundColor: 'rgba(239,68,68,0.08)',
+          tension: 0.35,
+          fill: true,
+          pointRadius: compact ? 0 : 3,
+          pointHoverRadius: 5,
+          borderWidth: 2
         }
       ]
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { labels: { color: '#e5e7eb', font: { size: 16 } } },
-        tooltip: { mode: 'index', intersect: false }
+        legend: {
+          display: true,
+          position: 'top',
+          align: 'end',
+          labels: {
+            color: '#94a3b8',
+            usePointStyle: true,
+            pointStyle: 'circle',
+            boxWidth: 8,
+            padding: 16,
+            font: { size: 12, weight: '500' }
+          }
+        },
+        tooltip: {
+          backgroundColor: '#1a1d2e',
+          borderColor: 'rgba(255,255,255,0.06)',
+          borderWidth: 1,
+          titleColor: '#e2e8f0',
+          bodyColor: '#94a3b8',
+          padding: 10,
+          callbacks: {
+            label: item => `${item.dataset.label}: ${money.format(item.parsed.y)}`
+          }
+        }
       },
       scales: {
         x: {
-          ticks: { color: '#9ca3af', font: { size: 14 } },
-          grid: { color: 'rgba(255,255,255,0.05)' }
+          ticks: { color: '#64748b', font: { size: 11 }, maxRotation: 45, maxTicksLimit: 12 },
+          grid: { color: 'rgba(255,255,255,0.03)' }
         },
         y: {
-          ticks: {
-            color: '#9ca3af',
-            font: { size: 14 },
-            callback: v => moneyFormatter.format(v)
-          },
-          grid: { color: 'rgba(255,255,255,0.05)' }
+          beginAtZero: true,
+          ticks: { color: '#64748b', font: { size: 11 }, callback: v => money.format(v) },
+          grid: { color: 'rgba(255,255,255,0.03)' }
         }
       }
     }

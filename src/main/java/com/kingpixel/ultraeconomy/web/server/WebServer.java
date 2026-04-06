@@ -1,13 +1,20 @@
 package com.kingpixel.ultraeconomy.web.server;
 
 import com.kingpixel.ultraeconomy.UltraEconomy;
+import com.kingpixel.ultraeconomy.config.WebSecurityConfig;
 import com.kingpixel.ultraeconomy.web.server.api.PlayerApiServlet;
 import com.kingpixel.ultraeconomy.web.server.api.PlayersApiServlet;
+import com.kingpixel.ultraeconomy.web.server.api.StatsApiServlet;
 import com.kingpixel.ultraeconomy.web.server.api.TransactionPlayerApiServlet;
+import com.kingpixel.ultraeconomy.web.server.filter.RateLimitFilter;
+import com.kingpixel.ultraeconomy.web.server.filter.SecurityHeadersFilter;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.eclipse.jetty.server.HttpConfiguration;
+import org.eclipse.jetty.server.HttpConnectionFactory;
 import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.servlet.DefaultServlet;
 import org.eclipse.jetty.servlet.FilterHolder;
 import org.eclipse.jetty.servlet.ServletContextHandler;
@@ -19,20 +26,27 @@ import java.util.EnumSet;
 public class WebServer {
 
   private final Server server;
+  private final int port;
 
   public WebServer(int port) {
-    this.server = new Server(port);
+    this.server = new Server();
+    this.port = port;
   }
 
   public void start() {
     try {
+      // -----------------------------
+      // Configurar connector con timeouts de seguridad
+      // -----------------------------
+      configureConnector();
+
       ServletContextHandler context = new ServletContextHandler();
       context.setContextPath("/");
 
       // -----------------------------
-      // Configurar API
+      // Filtros de seguridad (PRIMERO — antes de todo)
       // -----------------------------
-      registerApiServlets(context);
+      registerSecurityFilters(context);
 
       // -----------------------------
       // Configurar CORS si está en modo debug
@@ -40,6 +54,11 @@ public class WebServer {
       if (UltraEconomy.config.isDebug()) {
         registerCors(context);
       }
+
+      // -----------------------------
+      // Configurar API
+      // -----------------------------
+      registerApiServlets(context);
 
       // -----------------------------
       // Servir archivos estáticos
@@ -56,8 +75,9 @@ public class WebServer {
       // -----------------------------
       server.setHandler(context);
       server.start();
+      UltraEconomy.LOGGER.info("[Web] Server started on port {} with security filters enabled", port);
     } catch (Exception e) {
-      e.printStackTrace();
+      UltraEconomy.LOGGER.error("[Web] Failed to start web server on port {}", port, e);
     }
   }
 
@@ -65,7 +85,7 @@ public class WebServer {
     try {
       server.stop();
     } catch (Exception e) {
-      e.printStackTrace();
+      UltraEconomy.LOGGER.error("[Web] Error stopping web server", e);
     }
   }
 
@@ -73,7 +93,63 @@ public class WebServer {
   // MÉTODOS PRIVADOS
   // =============================
 
+  /**
+   * Configure Jetty connector with security-oriented timeouts.
+   * <p>
+   * - Idle timeout: closes slow/abandoned connections (slow-loris protection)
+   * - Request header size: limits oversized headers
+   * - Response header size: sane default
+   */
+  private void configureConnector() {
+    WebSecurityConfig security = UltraEconomy.config.getWebSecurity();
+    int idleTimeout = (security != null && security.isEnabled())
+      ? security.getIdleTimeoutSeconds() * 1000
+      : 30_000;
+    int maxRequestBody = (security != null && security.isEnabled())
+      ? security.getMaxRequestBodyBytes()
+      : 8192;
+
+    HttpConfiguration httpConfig = new HttpConfiguration();
+    httpConfig.setRequestHeaderSize(8192);
+    httpConfig.setResponseHeaderSize(8192);
+    httpConfig.setSendServerVersion(false); // Don't expose Jetty version
+    httpConfig.setSendDateHeader(true);
+
+    ServerConnector connector = new ServerConnector(server, new HttpConnectionFactory(httpConfig));
+    connector.setPort(port);
+    connector.setIdleTimeout(idleTimeout);
+    server.addConnector(connector);
+
+    // Limit request body size (this server only handles GET, so keep it small)
+    server.setAttribute("org.eclipse.jetty.server.Request.maxFormContentSize", maxRequestBody);
+  }
+
+  /**
+   * Register security filters in correct order:
+   * 1. Rate Limiting (reject abusive traffic ASAP)
+   * 2. Security Headers (add protective headers to all responses)
+   */
+  private void registerSecurityFilters(ServletContextHandler context) {
+    WebSecurityConfig security = UltraEconomy.config.getWebSecurity();
+    if (security == null || !security.isEnabled()) {
+      UltraEconomy.LOGGER.warn("[WebSecurity] Security filters are DISABLED. " +
+        "Set webSecurity.enabled=true in config.json for production use.");
+      return;
+    }
+
+    // Order matters: rate limit FIRST to reject abuse before any processing
+    RateLimitFilter.register(context);
+    SecurityHeadersFilter.register(context);
+
+    UltraEconomy.LOGGER.info("[WebSecurity] Filters active — API rate: {}/s (burst {}), " +
+        "Static rate: {}/s (burst {}), Ban after {} violations for {} min",
+      security.getApiRateLimit(), security.getApiBurstCapacity(),
+      security.getStaticRateLimit(), security.getStaticBurstCapacity(),
+      security.getBanThreshold(), security.getBanDurationMinutes());
+  }
+
   private void registerApiServlets(ServletContextHandler context) {
+    context.addServlet(StatsApiServlet.class, "/api/stats");
     context.addServlet(PlayersApiServlet.class, "/api/players");
     context.addServlet(TransactionPlayerApiServlet.class, "/api/transactions/player/*");
     context.addServlet(PlayerApiServlet.class, "/api/player/*");

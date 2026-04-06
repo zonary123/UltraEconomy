@@ -3,17 +3,23 @@ package com.kingpixel.ultraeconomy.database;
 import com.kingpixel.cobbleutils.CobbleUtils;
 import com.kingpixel.cobbleutils.Model.DataBaseConfig;
 import com.kingpixel.ultraeconomy.UltraEconomy;
-import com.kingpixel.ultraeconomy.api.UltraEconomyApi;
 import com.kingpixel.ultraeconomy.config.Currencies;
 import com.kingpixel.ultraeconomy.models.Account;
+import com.kingpixel.ultraeconomy.models.BackupInfo;
 import com.kingpixel.ultraeconomy.models.Currency;
 import com.kingpixel.ultraeconomy.models.Transaction;
 import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoNamespace;
-import com.mongodb.client.*;
-import com.mongodb.client.model.*;
-import net.minecraft.entity.Entity;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.RenameCollectionOptions;
+import com.mongodb.client.model.ReplaceOptions;
+import com.mongodb.client.model.Sorts;
+import com.mongodb.client.model.Updates;
 import net.minecraft.server.network.ServerPlayerEntity;
 import org.bson.Document;
 import org.bson.UuidRepresentation;
@@ -57,12 +63,12 @@ public class MongoDBClient extends DatabaseClient {
 
 
   private ScheduledExecutorService transactionExecutor;
-  private boolean runningTransactions = false;
+  private volatile boolean runningTransactions = false;
 
   @Override
   public synchronized void connect(DataBaseConfig config) {
     if (connected.get()) {
-      CobbleUtils.LOGGER.warn("MongoDB already connected, ignoring connect()");
+      UltraEconomy.LOGGER.warn("MongoDB already connected, ignoring connect()");
       return;
     }
 
@@ -101,26 +107,24 @@ public class MongoDBClient extends DatabaseClient {
         TimeUnit.SECONDS
       );
 
-      CobbleUtils.LOGGER.info("Connected to MongoDB");
+      UltraEconomy.LOGGER.info("Connected to MongoDB");
 
     } catch (Exception e) {
       connected.set(false);
-      CobbleUtils.LOGGER.error("❌ Could not connect to MongoDB");
-      e.printStackTrace();
+      UltraEconomy.LOGGER.error("Could not connect to MongoDB", e);
     }
   }
 
   private void safeCheckAndApplyTransactions() {
     if (!connected.get() || shuttingDown.get()) {
-      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Skipping transaction processing, not connected or shutting down.");
+      UltraEconomy.LOGGER.debug("Skipping transaction processing, not connected or shutting down.");
       return;
     }
 
     try {
       checkAndApplyTransactions();
     } catch (Exception e) {
-      CobbleUtils.LOGGER.error("Transaction worker crashed");
-      e.printStackTrace();
+      UltraEconomy.LOGGER.error("Transaction worker crashed", e);
     }
   }
 
@@ -151,9 +155,9 @@ public class MongoDBClient extends DatabaseClient {
         transactionsCollection.createIndex(new Document(FIELD_PROCESSED, 1));
       }
 
-      CobbleUtils.LOGGER.info("Indexes verified/created successfully.");
+      UltraEconomy.LOGGER.info("Indexes verified/created successfully.");
     } catch (Exception e) {
-      CobbleUtils.LOGGER.error("Error ensuring MongoDB indexes: " + e.getMessage());
+      UltraEconomy.LOGGER.error("Error ensuring MongoDB indexes: " + e.getMessage());
     }
   }
 
@@ -187,7 +191,7 @@ public class MongoDBClient extends DatabaseClient {
     transactionsCollection = null;
     backupsCollection = null;
 
-    CobbleUtils.LOGGER.info("Disconnected from MongoDB safely");
+    UltraEconomy.LOGGER.info("Disconnected from MongoDB safely");
   }
 
 
@@ -216,10 +220,11 @@ public class MongoDBClient extends DatabaseClient {
         account = new Account(player);
         saveOrUpdateAccount(account);
       } else {
-        CobbleUtils.LOGGER.warn("Could not find player with UUID " + uuid);
+        UltraEconomy.LOGGER.warn("Could not find player with UUID " + uuid);
         return null;
       }
     }
+    DatabaseFactory.ACCOUNTS.put(uuid, account);
     return account;
   }
 
@@ -235,7 +240,7 @@ public class MongoDBClient extends DatabaseClient {
 
   private void saveAccount(Account account) {
     if (account == null) {
-      CobbleUtils.LOGGER.warn("Tried to save a null account.");
+      UltraEconomy.LOGGER.warn("Tried to save a null account.");
       return;
     }
     Document accountDoc = account.toDocument();
@@ -245,6 +250,7 @@ public class MongoDBClient extends DatabaseClient {
       accountDoc,
       new ReplaceOptions().upsert(true)
     );
+    account.markClean();
   }
 
   public void addTransaction(UUID uuid, Currency currency, BigDecimal amount, TransactionType type, boolean processed) {
@@ -276,12 +282,11 @@ public class MongoDBClient extends DatabaseClient {
         backupsCollection.insertOne(backup);
 
         if (UltraEconomy.config.isDebug()) {
-          CobbleUtils.LOGGER.info("📦 MongoDB backup created successfully");
+          UltraEconomy.LOGGER.info("MongoDB backup created successfully");
         }
 
       } catch (Exception e) {
-        CobbleUtils.LOGGER.error("❌ Error creating MongoDB backup");
-        e.printStackTrace();
+        UltraEconomy.LOGGER.error("Error creating MongoDB backup", e);
       }
       cleanOldBackUps();
     });
@@ -299,12 +304,40 @@ public class MongoDBClient extends DatabaseClient {
       ).getDeletedCount();
 
       if (deleted > 0 && UltraEconomy.config.isDebug()) {
-        CobbleUtils.LOGGER.info("🧹 Deleted " + deleted + " old backups");
+        UltraEconomy.LOGGER.info("Deleted " + deleted + " old backups");
       }
     } catch (Exception e) {
-      CobbleUtils.LOGGER.error("❌ Error cleaning old backups");
-      e.printStackTrace();
+      UltraEconomy.LOGGER.error("Error cleaning old backups", e);
     }
+  }
+
+  @Override
+  public List<BackupInfo> getBackups() {
+    List<BackupInfo> backups = new ArrayList<>();
+    try {
+      for (Document doc : backupsCollection.find().sort(new Document("created_at", -1))) {
+        try {
+          @SuppressWarnings("unchecked")
+          List<Document> accounts = doc.getList("accounts", Document.class);
+          @SuppressWarnings("unchecked")
+          List<Document> transactions = doc.getList("transactions", Document.class);
+          Date createdAt = doc.getDate("created_at");
+
+          BackupInfo info = BackupInfo.builder()
+            .backupUUID(UUID.fromString(doc.getString("uuid")))
+            .createdAt(createdAt != null ? createdAt.toInstant() : Instant.now())
+            .accountCount(accounts != null ? accounts.size() : 0)
+            .transactionCount(transactions != null ? transactions.size() : 0)
+            .build();
+          backups.add(info);
+        } catch (Exception e) {
+          UltraEconomy.LOGGER.warn("Could not read backup document", e);
+        }
+      }
+    } catch (Exception e) {
+      UltraEconomy.LOGGER.error("Error listing MongoDB backups", e);
+    }
+    return backups;
   }
 
   @Override
@@ -319,6 +352,7 @@ public class MongoDBClient extends DatabaseClient {
   public List<Transaction> getTransactions(UUID uuid, int limit) {
     var filter = Filters.eq(FIELD_ACCOUNT_UUID, uuid.toString());
     return transactionsCollection.find(filter)
+      .sort(Sorts.descending("timestamp"))
       .limit(limit)
       .map(Transaction::fromDocument)
       .into(new ArrayList<>());
@@ -329,11 +363,12 @@ public class MongoDBClient extends DatabaseClient {
     var filter = Filters.eq(FIELD_PLAYER_NAME, name);
     Document doc = accountsCollection.find(filter).first();
     if (doc != null) {
-      return Account.fromDocument(doc);
+      Account account = Account.fromDocument(doc);
+      DatabaseFactory.ACCOUNTS.put(account.getPlayerUUID(), account);
+      return account;
     }
     return null;
   }
-
 
   @Override
   public void loadBackUp(UUID backupUUID) {
@@ -344,7 +379,7 @@ public class MongoDBClient extends DatabaseClient {
         ).first();
 
         if (backup == null) {
-          CobbleUtils.LOGGER.warn("⚠ Backup not found: " + backupUUID);
+          UltraEconomy.LOGGER.warn("Backup not found: " + backupUUID);
           return;
         }
 
@@ -380,11 +415,10 @@ public class MongoDBClient extends DatabaseClient {
 
         DatabaseFactory.ACCOUNTS.invalidateAll();
 
-        CobbleUtils.LOGGER.info("♻ Backup restored successfully: " + backupUUID);
+        UltraEconomy.LOGGER.info("Backup restored successfully: " + backupUUID);
 
       } catch (Exception e) {
-        CobbleUtils.LOGGER.error("❌ Error restoring backup: " + backupUUID);
-        e.printStackTrace();
+        UltraEconomy.LOGGER.error("Error restoring backup: " + backupUUID, e);
       }
     });
   }
@@ -392,21 +426,21 @@ public class MongoDBClient extends DatabaseClient {
 
   private void checkAndApplyTransactions() {
     if (shuttingDown.get()) {
-      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Skipping transaction processing, shutting down.");
+      UltraEconomy.LOGGER.debug("Skipping transaction processing, shutting down.");
       return;
     }
     if (!runningTransactions) {
-      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Skipping transaction processing, not running.");
+      UltraEconomy.LOGGER.debug("Skipping transaction processing, not running.");
       return;
     }
     if (UltraEconomy.server == null) {
-      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Skipping transaction processing, server not ready.");
+      UltraEconomy.LOGGER.debug("Skipping transaction processing, server not ready.");
       return;
     }
 
     var players = UltraEconomy.server.getPlayerManager().getPlayerList();
     List<String> uuids = players.stream()
-      .map(Entity::getUuidAsString)
+      .map(p -> p.getUuidAsString())
       .toList();
 
     if (uuids.isEmpty()) return;
@@ -414,7 +448,7 @@ public class MongoDBClient extends DatabaseClient {
     try {
       Document tx;
       if (shuttingDown.get()) {
-        CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Aborting transaction processing, shutting down.");
+        UltraEconomy.LOGGER.debug("Aborting transaction processing, shutting down.");
         return;
       }
       while ((tx = transactionsCollection.findOneAndUpdate(
@@ -429,7 +463,7 @@ public class MongoDBClient extends DatabaseClient {
         Account account = getCachedAccount(uuid);
         if (account == null || player == null || player.isDisconnected()) {
           if (UltraEconomy.config.isDebug())
-            CobbleUtils.LOGGER.warn("Account not found in cache for transaction: " + tx.toJson());
+            UltraEconomy.LOGGER.warn("Account not found in cache for transaction: " + tx.toJson());
           transactionsCollection.updateOne(
             Filters.eq("_id", tx.getObjectId("_id")),
             Updates.set(FIELD_PROCESSED, false)
@@ -449,7 +483,7 @@ public class MongoDBClient extends DatabaseClient {
           case Double d -> amount = BigDecimal.valueOf(d);
           case Float f -> amount = BigDecimal.valueOf(f);
           default -> {
-            CobbleUtils.LOGGER.error("Unknown amount type in transaction: " + tx.toJson());
+            UltraEconomy.LOGGER.error("Unknown amount type in transaction: " + tx.toJson());
             continue;
           }
         }
@@ -458,32 +492,67 @@ public class MongoDBClient extends DatabaseClient {
         try {
           type = TransactionType.valueOf(tx.getString("type"));
         } catch (IllegalArgumentException ex) {
-          CobbleUtils.LOGGER.error("Invalid transaction type: " + tx.toJson());
-          ex.printStackTrace();
+          UltraEconomy.LOGGER.error("Invalid transaction type: " + tx.toJson(), ex);
           continue;
         }
 
+        // Apply directly to Account to AVOID creating duplicate transactions.
+        // UltraEconomyApi methods call addTransaction() internally, which would
+        // create a processed=true copy for every pending transaction processed.
         switch (type) {
-          case DEPOSIT -> UltraEconomyApi.deposit(uuid, currency.getId(), amount);
-          case WITHDRAW -> UltraEconomyApi.withdraw(uuid, currency.getId(), amount);
-          case SET -> UltraEconomyApi.setBalance(uuid, currency.getId(), amount);
+          case DEPOSIT -> account.addBalance(currency, amount);
+          case WITHDRAW -> {
+            if (!account.removeBalance(currency, amount) && UltraEconomy.config.isDebug()) {
+              UltraEconomy.LOGGER.warn("Insufficient funds for pending WITHDRAW: " + tx.toJson());
+            }
+          }
+          case SET -> account.setBalance(currency, amount);
           default -> {
-            CobbleUtils.LOGGER.error("Unknown transaction type: " + type);
+            UltraEconomy.LOGGER.warn("Unhandled transaction type: " + type);
             continue;
           }
         }
         saveOrUpdateAccount(account);
-        //DatabaseFactory.ACCOUNTS.put(uuid, account);
-        if (CobbleUtils.config.isDebug()) {
-          CobbleUtils.LOGGER.info("Processed transaction: " + tx.toJson());
+        if (UltraEconomy.config.isDebug()) {
+          UltraEconomy.LOGGER.info("Processed transaction: " + tx.toJson());
         }
       }
     } catch (Exception e) {
-      CobbleUtils.LOGGER.error("Error processing transactions");
-      e.printStackTrace();
+      UltraEconomy.LOGGER.error("Error processing transactions", e);
     }
   }
 
+
+  @Override
+  public List<Account> getTopBalances(Currency currency, int page, int playersPerPage) {
+    List<Account> topAccounts = new ArrayList<>();
+    int skip = (page - 1) * playersPerPage;
+
+    try {
+      String balanceField = FIELD_BALANCES + "." + currency.getId();
+      var cursor = accountsCollection.find()
+        .sort(new Document(balanceField, -1))
+        .skip(skip)
+        .limit(playersPerPage + 1);
+
+      int rank = skip + 1;
+      for (Document doc : cursor) {
+        Account account = Account.fromDocument(doc);
+        account.setRank(rank++);
+        topAccounts.add(account);
+      }
+    } catch (Exception e) {
+      UltraEconomy.LOGGER.error("Error fetching top balances for " + currency.getId(), e);
+    }
+
+    return topAccounts;
+  }
+
+  @Override
+  public boolean existPlayerWithUUID(UUID uuid) {
+    Document doc = accountsCollection.find(Filters.eq(FIELD_UUID, uuid.toString())).first();
+    return doc != null;
+  }
 
   @Override
   public boolean addBalance(UUID uuid, Currency currency, BigDecimal amount) {
@@ -491,12 +560,12 @@ public class MongoDBClient extends DatabaseClient {
     boolean result = true;
     if (account == null) {
       if (UltraEconomy.config.isDebug()) {
-        CobbleUtils.LOGGER.warn(UltraEconomy.MOD_ID, "Account not found in cache for UUID: " + uuid + ", queuing transaction.");
+        UltraEconomy.LOGGER.warn("Account not found in cache for UUID: " + uuid + ", queuing transaction.");
       }
       addTransaction(uuid, currency, amount, TransactionType.DEPOSIT, false);
     } else {
       if (UltraEconomy.config.isDebug()) {
-        CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Account found in cache for UUID: " + uuid + ", adding balance.");
+        UltraEconomy.LOGGER.info("Account found in cache for UUID: " + uuid + ", adding balance.");
       }
       result = account.addBalance(currency, amount);
       if (result) addTransaction(uuid, currency, amount, TransactionType.DEPOSIT, true);
@@ -507,19 +576,14 @@ public class MongoDBClient extends DatabaseClient {
   @Override
   public boolean removeBalance(UUID uuid, Currency currency, BigDecimal amount) {
     Account account = getCachedAccount(uuid);
-    boolean result = true;
     if (account == null) {
-      if (UltraEconomy.config.isDebug()) {
-        CobbleUtils.LOGGER.warn(UltraEconomy.MOD_ID, "Account not found in cache for UUID: " + uuid + ", queuing transaction.");
-      }
-      addTransaction(uuid, currency, amount, TransactionType.WITHDRAW, false);
-    } else {
-      if (UltraEconomy.config.isDebug()) {
-        CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Account found in cache for UUID: " + uuid + ", removing balance.");
-      }
-      result = account.removeBalance(currency, amount);
-      addTransaction(uuid, currency, amount, TransactionType.WITHDRAW, true);
+      // Player not cached — load from DB to verify balance before withdrawing.
+      // Blindly queueing a WITHDRAW would return true without checking funds.
+      account = getAccount(uuid);
+      if (account == null) return false;
     }
+    boolean result = account.removeBalance(currency, amount);
+    if (result) addTransaction(uuid, currency, amount, TransactionType.WITHDRAW, true);
     return result;
   }
 
@@ -527,61 +591,25 @@ public class MongoDBClient extends DatabaseClient {
   public BigDecimal setBalance(UUID uuid, Currency currency, BigDecimal amount) {
     Account account = getCachedAccount(uuid);
     if (account == null) {
-      if (UltraEconomy.config.isDebug()) {
-        CobbleUtils.LOGGER.warn(UltraEconomy.MOD_ID, "Account not found in cache for UUID: " + uuid + ", queuing transaction.");
-      }
       addTransaction(uuid, currency, amount, TransactionType.SET, false);
     } else {
-      if (UltraEconomy.config.isDebug()) {
-        CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Account found in cache for UUID: " + uuid + ", setting balance.");
-      }
       account.setBalance(currency, amount);
       addTransaction(uuid, currency, amount, TransactionType.SET, true);
     }
-    var filter = Filters.eq(FIELD_UUID, uuid.toString());
-    var update = Updates.set(FIELD_BALANCES + "." + currency.getId(), new Decimal128(amount));
-    accountsCollection.updateOne(filter, update);
     return amount;
   }
 
   @Override
   public BigDecimal getBalance(UUID uuid, Currency currency) {
-    return getAccount(uuid).getBalance(currency);
+    Account account = getAccount(uuid);
+    if (account == null) return null;
+    return account.getBalance(currency);
   }
 
   @Override
   public boolean hasEnoughBalance(UUID uuid, Currency currency, BigDecimal amount) {
-    return getAccount(uuid).hasEnoughBalance(currency, amount);
+    Account account = getAccount(uuid);
+    if (account == null) return false;
+    return account.hasEnoughBalance(currency, amount);
   }
-
-  @Override
-  public List<Account> getTopBalances(Currency currency, int page, int playersPerPage) {
-    List<Account> topAccounts = new ArrayList<>();
-    int skip = Math.max(page - 1, 0) * playersPerPage;
-    int index = skip + 1;
-
-    String currencyKey = currency.getId();
-
-    FindIterable<Document> docs = accountsCollection.find(Filters.exists("balances." + currencyKey, true))
-      .sort(Sorts.descending("balances." + currencyKey))
-      .skip(skip)
-      .limit(playersPerPage + 1); // To know if there's a next page
-
-    for (Document doc : docs) {
-      Account account = Account.fromDocument(doc);
-      account.setRank(index++);
-      topAccounts.add(account);
-    }
-
-    return topAccounts;
-  }
-
-
-  @Override
-  public boolean existPlayerWithUUID(UUID uuid) {
-    Document doc = accountsCollection.find(Filters.eq(FIELD_UUID, uuid.toString())).first();
-    return doc != null;
-  }
-
-
 }

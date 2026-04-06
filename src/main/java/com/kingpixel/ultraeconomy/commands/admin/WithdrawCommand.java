@@ -10,7 +10,6 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.text.Text;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -25,6 +24,10 @@ public class WithdrawCommand {
         .requires(source -> PermissionApi.hasPermission(source, "ultraeconomy.admin.withdraw", 2))
         .then(
           CommandManager.argument("amount", StringArgumentType.string())
+            .suggests((context, builder) -> {
+              for (String s : new String[]{"1", "10", "100", "1000", "10000"}) builder.suggest(s);
+              return builder.buildFuture();
+            })
             .then(
               CommandManager.argument("currency", StringArgumentType.string())
                 .suggests((context, builder) -> {
@@ -39,7 +42,8 @@ public class WithdrawCommand {
                       UltraEconomy.runAsync(() -> {
                         var target = StringArgumentType.getString(context, "player");
                         if (!UltraEconomyApi.existsPlayerWithName(target)) {
-                          context.getSource().sendMessage(Text.literal("§cPlayer not found"));
+                          UltraEconomy.lang.getMessagePlayerNotFound().sendMessage(
+                            context.getSource().getPlayer(), UltraEconomy.lang.getPrefix(), false);
                           return;
                         }
                         var currency = Currencies.getCurrency(StringArgumentType.getString(context, "currency"));
@@ -50,7 +54,8 @@ public class WithdrawCommand {
                           UltraEconomyApi.withdraw(playerUUID, currency.getId(), value);
                           Register.sendMessage(currency, value, playerUUID, UltraEconomy.lang.getMessageWithdraw());
                         } else {
-                          context.getSource().sendError(Text.literal("§cPlayer not found"));
+                          UltraEconomy.lang.getMessagePlayerNotFound().sendMessage(
+                            context.getSource().getPlayer(), UltraEconomy.lang.getPrefix(), false);
                         }
                       });
                       return 1;

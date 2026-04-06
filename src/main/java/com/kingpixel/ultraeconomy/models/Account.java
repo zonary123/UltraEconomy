@@ -4,9 +4,12 @@ import ca.landonjw.gooeylibs2.api.button.GooeyButton;
 import com.kingpixel.cobbleutils.CobbleUtils;
 import com.kingpixel.cobbleutils.util.AdventureTranslator;
 import com.kingpixel.cobbleutils.util.PlayerUtils;
+import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.config.Currencies;
-import lombok.Data;
+import com.kingpixel.ultraeconomy.database.DatabaseFactory;
 import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.ToString;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.LoreComponent;
@@ -19,11 +22,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static com.kingpixel.ultraeconomy.database.MongoDBClient.*;
 
-@Data
+@Getter
+@Setter
 @EqualsAndHashCode
 @ToString
 public class Account {
@@ -32,10 +37,19 @@ public class Account {
   private String playerName;
   private final ConcurrentHashMap<String, BigDecimal> balances;
 
+  /**
+   * Dirty flag — indicates that the account has been modified in memory
+   * and needs to be persisted to the database.
+   */
+  @EqualsAndHashCode.Exclude
+  @ToString.Exclude
+  private transient volatile boolean dirty = false;
+
   public Account(ServerPlayerEntity player) {
     this.playerUUID = player.getUuid();
     this.playerName = player.getGameProfile().getName();
     this.balances = defaultBalances();
+    this.dirty = true;
   }
 
   public Account(UUID playerUUID) {
@@ -43,6 +57,7 @@ public class Account {
     if (player != null) this.playerName = player.getGameProfile().getName();
     this.playerUUID = playerUUID;
     this.balances = defaultBalances();
+    this.dirty = true;
   }
 
   public Account(UUID uuid, Map<String, BigDecimal> balances) {
@@ -64,6 +79,44 @@ public class Account {
     this.playerUUID = playerUUID;
     this.playerName = playerName;
     this.balances = defaultBalances();
+    this.dirty = true;
+  }
+
+  // ==================== Dirty Pattern ====================
+
+  /**
+   * Mark this account as dirty (needs persistence).
+   */
+  public void markDirty() {
+    this.dirty = true;
+  }
+
+  /**
+   * Mark this account as clean (just persisted).
+   */
+  public void markClean() {
+    this.dirty = false;
+  }
+
+  /**
+   * Persist this account asynchronously.
+   * Returns a CompletableFuture that completes when the save finishes.
+   * Useful for saveAll with get(30, TimeUnit.SECONDS) on shutdown.
+   */
+  public CompletableFuture<Void> save() {
+    return UltraEconomy.runAsync(() -> {
+      DatabaseFactory.INSTANCE.saveOrUpdateAccountSync(this);
+      markClean();
+    });
+  }
+
+  // ==================== Setters that mark dirty ====================
+
+  public void setPlayerName(String playerName) {
+    if (playerName != null && !playerName.equals(this.playerName)) {
+      this.playerName = playerName;
+      markDirty();
+    }
   }
 
   public static Account fromDocument(Document doc) {
@@ -83,7 +136,7 @@ public class Account {
           try {
             balances.put(key, new BigDecimal(str));
           } catch (NumberFormatException e) {
-            CobbleUtils.LOGGER.warn("Invalid balance format for " + key + " in account " + uuid + ": " + str);
+            UltraEconomy.LOGGER.warn("Invalid balance format for " + key + " in account " + uuid + ": " + str);
           }
         }
       }
@@ -106,22 +159,35 @@ public class Account {
     return doc;
   }
 
+  // ==================== Balance operations (mark dirty) ====================
+
   public synchronized BigDecimal getBalance(Currency currency) {
-    return balances.getOrDefault(currency.getId(), null);
+    return balances.getOrDefault(currency.getId(), BigDecimal.ZERO);
   }
 
   public synchronized boolean addBalance(Currency currency, BigDecimal amount) {
+    if (amount.compareTo(BigDecimal.ZERO) <= 0) return false;
     balances.merge(currency.getId(), amount, BigDecimal::add);
+    markDirty();
     return true;
   }
 
+  /**
+   * Atomically checks balance >= amount and subtracts.
+   * Returns false if insufficient funds or amount <= 0.
+   */
   public synchronized boolean removeBalance(Currency currency, BigDecimal amount) {
-    balances.merge(currency.getId(), amount, BigDecimal::subtract);
+    if (amount.compareTo(BigDecimal.ZERO) <= 0) return false;
+    BigDecimal current = balances.getOrDefault(currency.getId(), BigDecimal.ZERO);
+    if (current.compareTo(amount) < 0) return false;
+    balances.put(currency.getId(), current.subtract(amount));
+    markDirty();
     return true;
   }
 
   public synchronized BigDecimal setBalance(Currency currency, BigDecimal amount) {
     balances.put(currency.getId(), amount);
+    markDirty();
     return amount;
   }
 
@@ -133,10 +199,6 @@ public class Account {
     var map = Currencies.getCurrencyMap();
     map.forEach((k, v) ->
       balances.putIfAbsent(v.getId(), v.getDefaultBalance()));
-    // Remove ilegal currencies
-    //List<String> keys = new ArrayList<>();
-    //map.forEach((k, v) -> keys.add(v.getId()));
-    //balances.keySet().removeIf(key -> !keys.contains(key));
   }
 
   private ConcurrentHashMap<String, BigDecimal> defaultBalances() {
@@ -147,7 +209,7 @@ public class Account {
 
   public GooeyButton getButton(Currency currency) {
     List<String> lore = List.of(
-      "§7Balance: §e" + currency.format(getBalance(currency))
+      UltraEconomy.lang.getMessageBalTopLore().replace("%balance%", currency.format(getBalance(currency)))
     );
     return GooeyButton.builder()
       .display(PlayerUtils.getHeadItem(playerUUID))

@@ -14,7 +14,6 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.text.Text;
 
 import java.util.List;
 import java.util.StringJoiner;
@@ -89,7 +88,8 @@ public class BaltopCommand {
     UltraEconomy.runAsync(() -> {
       Currency currency = Currencies.getCurrency(currencyId);
       if (currency == null) {
-        source.sendMessage(Text.literal("§c Currency not found: " + currencyId));
+        source.sendMessage(AdventureTranslator.toNative(
+          UltraEconomy.lang.getMessageCurrencyNotFound().replace("%currency%", currencyId)));
         return;
       }
       List<Account> topAccounts = DatabaseFactory.INSTANCE.getTopBalances(currency, page,
@@ -117,7 +117,7 @@ public class BaltopCommand {
         }
       }
 
-      int previousPage = Math.min(1, page - 1);
+      int previousPage = Math.max(1, page - 1);
       int nextPage = page + 1;
 
       joiner.add(UltraEconomy.lang.getMessageBalTopFooter()

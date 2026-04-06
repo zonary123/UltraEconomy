@@ -20,7 +20,12 @@ function getParams (match) {
   return Object.fromEntries(keys.map((key, i) => [keys[i], values[i]]))
 }
 
+let currentCleanup = null
+
 export async function renderRoute () {
+  /* Run cleanup from previous page (destroy charts, remove listeners, etc.) */
+  if (currentCleanup) { currentCleanup(); currentCleanup = null }
+
   const path = window.location.pathname
   const match = routes
     .map(route => ({ route, result: path.match(pathToRegex(route.path)) }))
@@ -30,10 +35,11 @@ export async function renderRoute () {
   const params = match ? getParams(match) : {}
 
   const app = document.getElementById('app')
-  app.innerHTML = await view(params) // Soporta async pages
+  app.innerHTML = await view(params)
+  window.scrollTo(0, 0)
 
-  // Llamar afterRender si existe
   if (view.afterRender) {
-    view.afterRender(params)
+    const cleanup = await view.afterRender(params)
+    if (typeof cleanup === 'function') currentCleanup = cleanup
   }
 }

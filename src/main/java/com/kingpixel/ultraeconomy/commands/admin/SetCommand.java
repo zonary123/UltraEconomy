@@ -10,7 +10,6 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.text.Text;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -25,6 +24,10 @@ public class SetCommand {
         .requires(source -> PermissionApi.hasPermission(source, "ultraeconomy.admin.set", 2))
         .then(
           CommandManager.argument("amount", StringArgumentType.string())
+            .suggests((context, builder) -> {
+              for (String s : new String[]{"0", "1", "10", "100", "1000", "10000"}) builder.suggest(s);
+              return builder.buildFuture();
+            })
             .then(
               CommandManager.argument("currency", StringArgumentType.string())
                 .suggests((context, builder) -> {
@@ -42,7 +45,8 @@ public class SetCommand {
                         var currency = Currencies.getCurrency(StringArgumentType.getString(context, "currency"));
                         var amountStr = StringArgumentType.getString(context, "amount");
                         if (!UltraEconomyApi.existsPlayerWithName(target)) {
-                          context.getSource().sendMessage(Text.literal("§cPlayer not found"));
+                          UltraEconomy.lang.getMessagePlayerNotFound().sendMessage(
+                            context.getSource().getPlayer(), UltraEconomy.lang.getPrefix(), false);
                           return;
                         }
                         var playerUUID = CobbleUtilsSuggests.SUGGESTS_PLAYER_OFFLINE_AND_ONLINE.getPlayerUUIDWithName(target);
@@ -51,7 +55,8 @@ public class SetCommand {
                           UltraEconomyApi.setBalance(playerUUID, currency.getId(), value);
                           Register.sendMessage(currency, value, playerUUID, UltraEconomy.lang.getMessageSetBalance());
                         } else {
-                          context.getSource().sendError(Text.literal("§cPlayer not found"));
+                          UltraEconomy.lang.getMessagePlayerNotFound().sendMessage(
+                            context.getSource().getPlayer(), UltraEconomy.lang.getPrefix(), false);
                         }
                       });
                       return 1;

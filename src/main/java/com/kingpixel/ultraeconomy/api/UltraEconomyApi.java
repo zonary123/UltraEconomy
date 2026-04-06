@@ -68,15 +68,20 @@ public class UltraEconomyApi {
     aggressiveSave(uuid);
     long end = System.currentTimeMillis();
     if (UltraEconomy.config.isDebug()) {
-      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Withdraw took " + (end - start) + "ms");
+      UltraEconomy.LOGGER.info("Withdraw took " + (end - start) + "ms");
     }
 
     return result;
   }
 
+  /**
+   * Aggressively save an account if it has been modified (dirty).
+   */
   private static void aggressiveSave(UUID playerUUID) {
     var account = DatabaseFactory.ACCOUNTS.getIfPresent(playerUUID);
-    if (account != null) saveAccount(account);
+    if (account != null && account.isDirty()) {
+      saveAccount(account);
+    }
   }
 
   /**
@@ -128,7 +133,7 @@ public class UltraEconomyApi {
     aggressiveSave(uuid);
     long end = System.currentTimeMillis();
     if (UltraEconomy.config.isDebug()) {
-      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Deposit took " + (end - start) + "ms");
+      UltraEconomy.LOGGER.info("Deposit took " + (end - start) + "ms");
     }
     return result;
   }
@@ -162,7 +167,7 @@ public class UltraEconomyApi {
 
     long end = System.currentTimeMillis();
     if (UltraEconomy.config.isDebug()) {
-      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Get balance took " + (end - start) + "ms");
+      UltraEconomy.LOGGER.info("Set balance took " + (end - start) + "ms");
     }
     return result;
   }
@@ -216,7 +221,7 @@ public class UltraEconomyApi {
     }
     long end = System.currentTimeMillis();
     if (UltraEconomy.config.isDebug()) {
-      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "hasEnoughBalance took " + (end - start) + "ms");
+      UltraEconomy.LOGGER.info("hasEnoughBalance took " + (end - start) + "ms");
     }
     return result;
   }
@@ -229,7 +234,7 @@ public class UltraEconomyApi {
     String nameExecutor = CobbleUtilsSuggests.SUGGESTS_PLAYER_OFFLINE_AND_ONLINE.getPlayerNameWithUUID(executor);
     if (nameExecutor == null || nameExecutor.isEmpty() || nameTarget == null || nameTarget.isEmpty()) {
       if (UltraEconomy.config.isDebug()) {
-        CobbleUtils.LOGGER.error(UltraEconomy.MOD_ID, "Executor or target name is null in transfer");
+        UltraEconomy.LOGGER.error("Executor or target name is null in transfer");
       }
       return false;
     }
@@ -244,14 +249,14 @@ public class UltraEconomyApi {
     String currId = curr.getId();
     if (!hasEnoughBalance(executor, currId, amount)) {
       if (UltraEconomy.config.isDebug()) {
-        CobbleUtils.LOGGER.error(UltraEconomy.MOD_ID, "Not enough balance for executor in transfer");
+        UltraEconomy.LOGGER.error("Not enough balance for executor in transfer");
       }
       return false;
     }
     if (!withdraw(executor, currId, amount)) {
       deposit(executor, currId, amount);
       if (UltraEconomy.config.isDebug()) {
-        CobbleUtils.LOGGER.error(UltraEconomy.MOD_ID, "Failed to withdraw from executor in transfer");
+        UltraEconomy.LOGGER.error("Failed to withdraw from executor in transfer");
       }
       return false;
     }
@@ -285,35 +290,39 @@ public class UltraEconomyApi {
     aggressiveSave(target);
     long end = System.currentTimeMillis();
     if (UltraEconomy.config.isDebug()) {
-      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Pay took " + (end - start) + "ms");
+      UltraEconomy.LOGGER.info("Pay took " + (end - start) + "ms");
     }
     return true;
   }
 
   /**
-   * Save an account to the database (This is done automatically when modifying the account)
-   *
-   * @param account the account
+   * Save an account to the database and mark it as clean.
    */
   public static void saveAccount(Account account) {
     long start = System.currentTimeMillis();
     DatabaseFactory.INSTANCE.saveOrUpdateAccount(account);
+    // markClean is called by the DB layer AFTER the actual write completes
     long end = System.currentTimeMillis();
     if (UltraEconomy.config.isDebug()) {
-      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Save account took " + (end - start) + "ms");
+      UltraEconomy.LOGGER.info("Save account took " + (end - start) + "ms");
     }
   }
 
+  /**
+   * Save an account to the database synchronously and mark it as clean.
+   */
   public static void saveAccountSync(Account account) {
     long start = System.currentTimeMillis();
     DatabaseFactory.INSTANCE.saveOrUpdateAccountSync(account);
+    account.markClean();
     long end = System.currentTimeMillis();
     if (UltraEconomy.config.isDebug()) {
-      CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Save account sync took " + (end - start) + "ms");
+      UltraEconomy.LOGGER.info("Save account sync took " + (end - start) + "ms");
     }
   }
 
   public static Locale getLocale(UUID playerUUID) {
+    if (UltraEconomy.server == null) return Locale.US;
     return getLocale(UltraEconomy.server.getPlayerManager().getPlayer(playerUUID));
   }
 
@@ -322,22 +331,20 @@ public class UltraEconomyApi {
     .build();
 
   public static Locale getLocale(ServerPlayerEntity player) {
-    // Locale del servidor como fallback
-    Locale serverLocale = Locale.US; // ajusta según tu implementación
+    Locale serverLocale = Locale.US;
 
     if (player == null) {
       if (UltraEconomy.config.isDebug()) {
-        CobbleUtils.LOGGER.warn(UltraEconomy.MOD_ID, "Player is null when getting locale, returning server locale");
+        UltraEconomy.LOGGER.warn("Player is null when getting locale, returning server locale");
       }
       return serverLocale;
     }
 
-    // Obtener el idioma enviado por el cliente
     String localeStr = player.getClientOptions().language();
 
     if (localeStr == null || localeStr.isEmpty()) {
       if (UltraEconomy.config.isDebug()) {
-        CobbleUtils.LOGGER.warn(UltraEconomy.MOD_ID, "Player locale string is null or empty, returning server locale");
+        UltraEconomy.LOGGER.warn("Player locale string is null or empty, returning server locale");
       }
       return serverLocale;
     }
@@ -345,13 +352,12 @@ public class UltraEconomyApi {
       try {
         Locale playerLocale = Locale.forLanguageTag(localeStr.replace('_', '-'));
         if (UltraEconomy.config.isDebug()) {
-          CobbleUtils.LOGGER.info(UltraEconomy.MOD_ID, "Player locale: " + playerLocale);
+          UltraEconomy.LOGGER.info("Player locale: " + playerLocale);
         }
         return playerLocale;
       } catch (Exception e) {
         if (UltraEconomy.config.isDebug()) {
-          CobbleUtils.LOGGER.error(UltraEconomy.MOD_ID, "Error parsing player locale: " + localeStr + ", returning server locale");
-          e.printStackTrace();
+          UltraEconomy.LOGGER.error("Error parsing player locale: " + localeStr + ", returning server locale", e);
         }
         return serverLocale;
       }

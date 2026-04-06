@@ -39,12 +39,21 @@ public class TransactionPlayerApiServlet extends HttpServlet {
 
     var transactions = DatabaseFactory.INSTANCE.getTransactions(
       playerUuid,
-      Integer.MAX_VALUE
+      parseLimit(req.getParameter("limit"), 500, 2000)
     );
 
     var json = Utils.newWithoutSpacingGson().toJson(transactions);
 
     resp.setStatus(HttpServletResponse.SC_OK);
     resp.getWriter().write(json);
+  }
+
+  private int parseLimit(String value, int defaultVal, int max) {
+    if (value == null) return defaultVal;
+    try {
+      return Math.min(max, Math.max(1, Integer.parseInt(value)));
+    } catch (NumberFormatException e) {
+      return defaultVal;
+    }
   }
 }

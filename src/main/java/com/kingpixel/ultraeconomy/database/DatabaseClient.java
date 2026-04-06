@@ -2,16 +2,19 @@ package com.kingpixel.ultraeconomy.database;
 
 import com.kingpixel.cobbleutils.Model.DataBaseConfig;
 import com.kingpixel.cobbleutils.command.suggests.CobbleUtilsSuggests;
-import com.kingpixel.ultraeconomy.api.UltraEconomyApi;
+import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.models.Account;
+import com.kingpixel.ultraeconomy.models.BackupInfo;
 import com.kingpixel.ultraeconomy.models.Currency;
 import com.kingpixel.ultraeconomy.models.Transaction;
 
 import javax.annotation.Nullable;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 public abstract class DatabaseClient {
   /**
@@ -168,7 +171,6 @@ public abstract class DatabaseClient {
 
   /**
    * Create a backup of the database
-   *
    */
   public abstract CompletableFuture<?> createBackUp();
 
@@ -176,12 +178,50 @@ public abstract class DatabaseClient {
 
   protected abstract void cleanOldBackUps();
 
-  public void flushCache() {
-    DatabaseFactory.ACCOUNTS.asMap().forEach((uuid, account) -> UltraEconomyApi.saveAccountSync(account));
+  /**
+   * Get a list of all available backups with metadata.
+   *
+   * @return list of BackupInfo sorted by creation date descending
+   */
+  public abstract List<BackupInfo> getBackups();
+
+  /**
+   * Flush all dirty accounts to the database.
+   * Uses CompletableFuture.allOf with a 30-second timeout so the server
+   * can wait for all saves to complete on shutdown.
+   *
+   * @return a CompletableFuture that completes when all saves finish
+   */
+  public CompletableFuture<Void> flushCache() {
+    List<CompletableFuture<Void>> futures = new ArrayList<>();
+    DatabaseFactory.ACCOUNTS.asMap().forEach((uuid, account) -> {
+      if (account.isDirty()) {
+        futures.add(account.save());
+      }
+    });
+    return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+  }
+
+  /**
+   * Flush all dirty accounts synchronously with a timeout.
+   * Blocks until all saves complete or the timeout expires.
+   *
+   * @param timeout the maximum time to wait
+   * @param unit    the time unit
+   */
+  public void flushCacheSync(long timeout, TimeUnit unit) {
+    try {
+      flushCache().get(timeout, unit);
+      UltraEconomy.LOGGER.info("All accounts flushed successfully.");
+    } catch (Exception e) {
+      UltraEconomy.LOGGER.error("Timeout or error flushing accounts on shutdown", e);
+    }
   }
 
   public boolean existPlayerWithName(String target) {
-    return existPlayerWithUUID(CobbleUtilsSuggests.SUGGESTS_PLAYER_OFFLINE_AND_ONLINE.getPlayerUUIDWithName(target));
+    UUID uuid = CobbleUtilsSuggests.SUGGESTS_PLAYER_OFFLINE_AND_ONLINE.getPlayerUUIDWithName(target);
+    if (uuid == null) return false;
+    return existPlayerWithUUID(uuid);
   }
 
   // API for web server

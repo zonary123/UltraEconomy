@@ -1,6 +1,7 @@
 package com.kingpixel.ultraeconomy.commands.base;
 
 import com.kingpixel.cobbleutils.command.suggests.CobbleUtilsSuggests;
+import com.kingpixel.cobbleutils.util.AdventureTranslator;
 import com.kingpixel.cobbleutils.util.PlayerUtils;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.api.UltraEconomyApi;
@@ -12,7 +13,6 @@ import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
 
 import java.util.List;
 import java.util.UUID;
@@ -58,7 +58,8 @@ public class BalanceCommand {
               .executes(context -> {
                 var target = StringArgumentType.getString(context, KEY_PLAYER);
                 if (!UltraEconomyApi.existsPlayerWithName(target)) {
-                  context.getSource().sendMessage(Text.literal("§cPlayer not found"));
+                  UltraEconomy.lang.getMessagePlayerNotFound().sendMessage(
+                    context.getSource().getPlayer(), UltraEconomy.lang.getPrefix(), false);
                   return 0;
                 }
                 var currencyId = StringArgumentType.getString(context, KEY_CURRENCY);
@@ -74,14 +75,14 @@ public class BalanceCommand {
     UltraEconomy.runAsync(() -> {
       var source = context.getSource();
       if (targetUUID == null) {
-        source.sendError(Text.literal("§cYou must be a player to use this command"));
+        source.sendError(AdventureTranslator.toNative(UltraEconomy.lang.getMessageOnlyPlayers()));
         return;
       }
 
       var currency = Currencies.getCurrency(currencyId);
       var balance = UltraEconomyApi.getBalance(targetUUID, currencyId);
       if (balance == null) {
-        source.sendError(Text.literal("§cBalance not found"));
+        source.sendError(AdventureTranslator.toNative(UltraEconomy.lang.getMessageBalanceNotFound()));
         return;
       }
       ServerPlayerEntity player = source.getPlayer();
