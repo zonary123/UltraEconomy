@@ -94,6 +94,6 @@ public class Transaction {
       .append(FIELD_PROCESSED, processed)
       .append(FIELD_REASON, reason)
       .append(FIELD_TRANSFERRED_TO_ACCOUNT_UUID, transferedToAccountUUID != null ? transferedToAccountUUID.toString() : null)
-      .append("timestamp", Date.from(Instant.now()));
+      .append("timestamp", Date.from(timestamp != null ? timestamp : Instant.now()));
   }
 }

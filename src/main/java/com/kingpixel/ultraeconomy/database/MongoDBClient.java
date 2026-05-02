@@ -29,10 +29,9 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class MongoDBClient extends DatabaseClient {
   // Nombres de las colecciones
@@ -52,6 +51,12 @@ public class MongoDBClient extends DatabaseClient {
 
   private final AtomicBoolean connected = new AtomicBoolean(false);
   private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
+  /**
+   * Incremented on every connect()/disconnect() cycle.
+   * Each scheduled task captures its own sessionId and exits early if the value no longer matches,
+   * preventing stale tasks from processing transactions after a reload.
+   */
+  private final AtomicLong sessionId = new AtomicLong(0);
 
   private MongoDatabase database;
   private MongoClient mongoClient;
@@ -61,8 +66,6 @@ public class MongoDBClient extends DatabaseClient {
 
   enum State {DISCONNECTED, CONNECTING, CONNECTED, DISCONNECTING}
 
-
-  private ScheduledExecutorService transactionExecutor;
   private volatile boolean runningTransactions = false;
 
   @Override
@@ -91,20 +94,17 @@ public class MongoDBClient extends DatabaseClient {
 
       ensureIndexes();
 
-      transactionExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
-        Thread t = new Thread(r, "UltraEconomy-Transaction-Worker");
-        t.setDaemon(true);
-        return t;
-      });
-
       runningTransactions = true;
       connected.set(true);
 
-      transactionExecutor.scheduleWithFixedDelay(
-        this::safeCheckAndApplyTransactions,
-        0,
-        2,
-        TimeUnit.SECONDS
+      // Capture the current session so the scheduled task can detect reconnects/reloads and stop.
+      long mySession = sessionId.incrementAndGet();
+      UltraEconomy.getAsyncContext().scheduleAtFixedRate(
+        () -> {
+          if (sessionId.get() != mySession) return; // Stale task from a previous session
+          safeCheckAndApplyTransactions();
+        },
+        0, 2, TimeUnit.SECONDS
       );
 
       UltraEconomy.LOGGER.info("Connected to MongoDB");
@@ -166,20 +166,9 @@ public class MongoDBClient extends DatabaseClient {
     if (!connected.get()) return;
     runningTransactions = false;
     shuttingDown.set(true);
+    // Invalidate the session so any in-flight scheduled task exits at its next iteration
+    sessionId.incrementAndGet();
     connected.set(false);
-
-    if (transactionExecutor != null) {
-      transactionExecutor.shutdown();
-      try {
-        if (!transactionExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-          transactionExecutor.shutdownNow();
-        }
-      } catch (InterruptedException e) {
-        transactionExecutor.shutdownNow();
-        Thread.currentThread().interrupt();
-      }
-      transactionExecutor = null;
-    }
 
     if (mongoClient != null) {
       mongoClient.close();
@@ -446,28 +435,25 @@ public class MongoDBClient extends DatabaseClient {
     if (uuids.isEmpty()) return;
 
     try {
-      Document tx;
-      if (shuttingDown.get()) {
-        UltraEconomy.LOGGER.debug("Aborting transaction processing, shutting down.");
-        return;
-      }
-      while ((tx = transactionsCollection.findOneAndUpdate(
+      // Fetch pending transactions in a batch (read-only — no side effects yet).
+      // We apply the balance change to the account FIRST, persist it, and only THEN
+      // do a conditional mark-as-processed update. This order ensures that a server
+      // crash between persist and mark-processed causes the tx to be retried (safe),
+      // rather than marking processed before the money lands (money lost).
+      List<Document> pending = transactionsCollection.find(
         Filters.and(
           Filters.eq(FIELD_PROCESSED, false),
           Filters.in(FIELD_ACCOUNT_UUID, uuids)
-        ),
-        Updates.set(FIELD_PROCESSED, true)
-      )) != null) {
+        )
+      ).limit(100).into(new ArrayList<>());
+
+      for (Document tx : pending) {
+        if (shuttingDown.get()) break;
+
         UUID uuid = UUID.fromString(tx.getString(FIELD_ACCOUNT_UUID));
         ServerPlayerEntity player = UltraEconomy.server.getPlayerManager().getPlayer(uuid);
         Account account = getCachedAccount(uuid);
         if (account == null || player == null || player.isDisconnected()) {
-          if (UltraEconomy.config.isDebug())
-            UltraEconomy.LOGGER.warn("Account not found in cache for transaction: " + tx.toJson());
-          transactionsCollection.updateOne(
-            Filters.eq("_id", tx.getObjectId("_id")),
-            Updates.set(FIELD_PROCESSED, false)
-          );
           continue;
         }
 
@@ -483,7 +469,7 @@ public class MongoDBClient extends DatabaseClient {
           case Double d -> amount = BigDecimal.valueOf(d);
           case Float f -> amount = BigDecimal.valueOf(f);
           default -> {
-            UltraEconomy.LOGGER.error("Unknown amount type in transaction: " + tx.toJson());
+            UltraEconomy.LOGGER.error("Unknown amount type in transaction: {}", tx.toJson());
             continue;
           }
         }
@@ -492,29 +478,64 @@ public class MongoDBClient extends DatabaseClient {
         try {
           type = TransactionType.valueOf(tx.getString("type"));
         } catch (IllegalArgumentException ex) {
-          UltraEconomy.LOGGER.error("Invalid transaction type: " + tx.toJson(), ex);
+          UltraEconomy.LOGGER.error("Invalid transaction type: {}", tx.toJson(), ex);
           continue;
         }
 
-        // Apply directly to Account to AVOID creating duplicate transactions.
-        // UltraEconomyApi methods call addTransaction() internally, which would
-        // create a processed=true copy for every pending transaction processed.
+        // Step 1: apply the balance change in memory
+        boolean applied;
+        BigDecimal previousBalance = account.getBalance(currency);
         switch (type) {
-          case DEPOSIT -> account.addBalance(currency, amount);
-          case WITHDRAW -> {
-            if (!account.removeBalance(currency, amount) && UltraEconomy.config.isDebug()) {
-              UltraEconomy.LOGGER.warn("Insufficient funds for pending WITHDRAW: " + tx.toJson());
-            }
+          case DEPOSIT -> applied = account.addBalance(currency, amount);
+          case WITHDRAW -> applied = account.removeBalance(currency, amount);
+          case SET -> {
+            account.setBalance(currency, amount);
+            applied = true;
           }
-          case SET -> account.setBalance(currency, amount);
           default -> {
-            UltraEconomy.LOGGER.warn("Unhandled transaction type: " + type);
+            UltraEconomy.LOGGER.warn("Unhandled transaction type: {}", type);
             continue;
           }
         }
-        saveOrUpdateAccount(account);
-        if (UltraEconomy.config.isDebug()) {
-          UltraEconomy.LOGGER.info("Processed transaction: " + tx.toJson());
+
+        if (!applied) {
+          if (UltraEconomy.config.isDebug()) {
+            UltraEconomy.LOGGER.warn("Insufficient funds for pending WITHDRAW: {}", tx.toJson());
+          }
+          // Mark as processed so we don't retry a permanently-failing withdraw
+          transactionsCollection.updateOne(
+            Filters.eq("_id", tx.getObjectId("_id")),
+            Updates.set(FIELD_PROCESSED, true)
+          );
+          continue;
+        }
+
+        // Step 2: persist the account synchronously before marking the tx processed
+        saveAccount(account);
+
+        // Step 3: conditional mark-as-processed — only succeeds if ANOTHER server hasn't
+        // already processed this tx (optimistic concurrency for cross-server deployments).
+        var updateResult = transactionsCollection.updateOne(
+          Filters.and(
+            Filters.eq("_id", tx.getObjectId("_id")),
+            Filters.eq(FIELD_PROCESSED, false)
+          ),
+          Updates.set(FIELD_PROCESSED, true)
+        );
+
+        if (updateResult.getModifiedCount() == 0) {
+          // Concurrent processing detected: another server processed this tx first.
+          // Compensate by undoing the balance change that was already applied.
+          UltraEconomy.LOGGER.warn("[CrossServer] Concurrent tx detected ({}), compensating balance.", tx.getObjectId("_id"));
+          switch (type) {
+            case DEPOSIT -> account.removeBalance(currency, amount);
+            case WITHDRAW -> account.addBalance(currency, amount);
+            case SET -> account.setBalance(currency, previousBalance); // Restore previous value
+            default -> { /* unreachable */ }
+          }
+          saveAccount(account);
+        } else if (UltraEconomy.config.isDebug()) {
+          UltraEconomy.LOGGER.info("Processed transaction: {}", tx.toJson());
         }
       }
     } catch (Exception e) {

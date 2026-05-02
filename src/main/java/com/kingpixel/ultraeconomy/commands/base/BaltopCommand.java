@@ -1,8 +1,10 @@
 package com.kingpixel.ultraeconomy.commands.base;
 
+import com.kingpixel.cobbleutils.api.PermissionApi;
 import com.kingpixel.cobbleutils.util.AdventureTranslator;
 import com.kingpixel.cobbleutils.util.PlayerUtils;
 import com.kingpixel.ultraeconomy.UltraEconomy;
+import com.kingpixel.ultraeconomy.commands.Register;
 import com.kingpixel.ultraeconomy.config.Currencies;
 import com.kingpixel.ultraeconomy.database.DatabaseFactory;
 import com.kingpixel.ultraeconomy.models.Account;
@@ -33,6 +35,7 @@ public class BaltopCommand {
 
   private static LiteralArgumentBuilder<ServerCommandSource> getBalTopMenu() {
     return CommandManager.literal("baltopmenu")
+      .requires(source -> PermissionApi.hasPermission(source, "ultraeconomy.command.baltopmenu", 0))
       .then(
         CommandManager.argument(CURRENCY_ARG, StringArgumentType.string())
           .suggests((context, builder) -> {
@@ -43,7 +46,7 @@ public class BaltopCommand {
             return builder.buildFuture();
           })
           .executes(context -> {
-            String currencyId = StringArgumentType.getString(context, CURRENCY_ARG);
+            String currencyId = Register.getCurrencyArgId(context, CURRENCY_ARG);
             Currency currency = Currencies.getCurrency(currencyId);
             UltraEconomy.lang.getBalTopMenu().open(context.getSource().getPlayer(), 1,
               currency);
@@ -54,6 +57,7 @@ public class BaltopCommand {
 
   private static LiteralArgumentBuilder<ServerCommandSource> get() {
     return CommandManager.literal("baltop")
+      .requires(source -> PermissionApi.hasPermission(source, "ultraeconomy.command.baltop", 0))
       .executes(context -> {
         run(context, Currencies.DEFAULT_CURRENCY.getId(), 1);
         return 1;
@@ -67,12 +71,12 @@ public class BaltopCommand {
             return builder.buildFuture();
           })
           .executes(context -> {
-            run(context, StringArgumentType.getString(context, CURRENCY_ARG), 1);
+            run(context, Register.getCurrencyArgId(context, CURRENCY_ARG), 1);
             return 1;
           }).then(
             CommandManager.argument("page", IntegerArgumentType.integer(1))
               .executes(context -> {
-                run(context, StringArgumentType.getString(context,
+                run(context, Register.getCurrencyArgId(context,
                     CURRENCY_ARG),
                   IntegerArgumentType.getInteger(context, "page"));
                 return 1;

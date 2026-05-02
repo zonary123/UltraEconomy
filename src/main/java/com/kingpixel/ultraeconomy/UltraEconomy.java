@@ -1,6 +1,5 @@
 package com.kingpixel.ultraeconomy;
 
-import com.kingpixel.cobbleutils.util.Utils;
 import com.kingpixel.cobbleutils.util.UtilsLogger;
 import com.kingpixel.cobbleutils.util.async.AsyncContext;
 import com.kingpixel.cobbleutils.util.async.UtilsAsync;
@@ -20,7 +19,6 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.server.MinecraftServer;
 import org.apache.logging.log4j.Logger;
 
-import java.io.File;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -41,9 +39,10 @@ public class UltraEconomy implements ModInitializer {
 
   @Override
   public void onInitialize() {
-    File folder = Utils.getAbsolutePath(PATH);
-    if (!folder.exists()) {
-      folder.mkdirs();
+    try {
+      java.nio.file.Files.createDirectories(java.nio.file.Path.of("." + PATH));
+    } catch (java.io.IOException e) {
+      LOGGER.error("Failed to create config directory: {}", PATH, e);
     }
     load();
     events();
@@ -59,6 +58,11 @@ public class UltraEconomy implements ModInitializer {
     }
     lang.init();
     Currencies.init();
+    // Flush dirty accounts before reinitializing to avoid data loss on reload
+    if (DatabaseFactory.INSTANCE != null) {
+      LOGGER.info("[Reload] Flushing dirty accounts before reloading database...");
+      DatabaseFactory.INSTANCE.flushCacheSync(10, TimeUnit.SECONDS);
+    }
     DatabaseFactory.init(config.getDatabase());
   }
 

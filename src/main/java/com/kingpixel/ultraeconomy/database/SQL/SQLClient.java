@@ -27,6 +27,7 @@ import java.sql.*;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 @EqualsAndHashCode(callSuper = true)
@@ -35,9 +36,13 @@ public class SQLClient extends DatabaseClient {
   private static final String KEY_AMOUNT = "amount";
   private DataBaseType dbType;
   private HikariDataSource dataSource;
-  private ScheduledExecutorService transactionExecutor;
-  private ExecutorService asyncExecutor;
   private volatile boolean runningTransactions = false;
+
+  /**
+   * Incremented on every connect()/disconnect() so stale scheduled tasks from a previous session
+   * recognise they are orphaned and exit without doing any work.
+   */
+  private final AtomicLong sessionId = new AtomicLong(0);
 
 
   @Override
@@ -45,22 +50,23 @@ public class SQLClient extends DatabaseClient {
     try {
       dbType = config.getType();
       SQLSentences.Data data = SQLSentences.configure();
-      asyncExecutor = data.getService();
       dataSource = data.getDataSource();
-      UltraEconomy.LOGGER.info("Connected to " + config.getType() + " database at " + config.getUrl());
+      UltraEconomy.LOGGER.info("Connected to {} database at {}", config.getType(), config.getUrl());
 
-      // Inicialización
       initTables(config.getType());
-      createIndexes(); // Ya no necesitas ensureProcessedColumnExists() si lo incluyes en initTables
-
-      transactionExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
-        Thread t = new Thread(r, "Transaction-Worker-UltraEconomy");
-        t.setDaemon(true);
-        return t;
-      });
+      createIndexes();
 
       runningTransactions = true;
-      transactionExecutor.scheduleWithFixedDelay(this::checkAndApplyTransactions, 0, 2, TimeUnit.SECONDS);
+
+      // Capture session before scheduling so the lambda can detect reload/disconnect cycles
+      long mySession = sessionId.incrementAndGet();
+      UltraEconomy.getAsyncContext().scheduleAtFixedRate(
+        () -> {
+          if (sessionId.get() != mySession) return; // Stale — skip
+          checkAndApplyTransactions();
+        },
+        0, 2, TimeUnit.SECONDS
+      );
 
     } catch (Exception e) {
       throw new DatabaseConnectionException(config.getType().name());
@@ -71,8 +77,8 @@ public class SQLClient extends DatabaseClient {
   @Override
   public void disconnect() {
     runningTransactions = false;
-    if (transactionExecutor != null) CobbleUtils.shutdownAndAwait(transactionExecutor);
-    if (asyncExecutor != null) CobbleUtils.shutdownAndAwait(asyncExecutor);
+    // Invalidate active session so the scheduled task short-circuits on its next tick
+    sessionId.incrementAndGet();
     if (dataSource != null && !dataSource.isClosed()) dataSource.close();
     UltraEconomy.LOGGER.info("Disconnected from database.");
   }
@@ -117,12 +123,12 @@ public class SQLClient extends DatabaseClient {
   }
 
   public void getAccountAsync(UUID uuid, Consumer<Account> callback) {
-    asyncExecutor.submit(() -> callback.accept(getAccount(uuid)));
+    UltraEconomy.runAsync(() -> callback.accept(getAccount(uuid)));
   }
 
   @Override
   public void saveOrUpdateAccount(Account account) {
-    asyncExecutor.submit(() -> saveAccount(account));
+    UltraEconomy.runAsync(() -> saveAccount(account));
   }
 
   @Override
@@ -158,7 +164,7 @@ public class SQLClient extends DatabaseClient {
         throw e;
       }
     } catch (SQLException e) {
-      UltraEconomy.LOGGER.error("Error saving account " + account.getPlayerUUID(), e);
+      UltraEconomy.LOGGER.error("Error saving account {}", account.getPlayerUUID(), e);
     }
   }
 
@@ -180,8 +186,7 @@ public class SQLClient extends DatabaseClient {
   public boolean removeBalance(UUID uuid, Currency currency, BigDecimal amount) {
     Account account = getCachedAccount(uuid);
     if (account == null) {
-      // Player not cached — load from DB to verify balance before withdrawing.
-      // Blindly queueing a WITHDRAW would return true without checking funds.
+      // Load from DB to verify balance — blindly queueing a WITHDRAW would return true without checking funds
       account = getAccount(uuid);
       if (account == null) return false;
     }
@@ -198,20 +203,9 @@ public class SQLClient extends DatabaseClient {
     } else {
       account.setBalance(currency, amount);
       addTransaction(uuid, currency, amount, TransactionType.SET, true);
-      saveBalanceSafe(uuid, currency, amount);
+      // Dirty flag is set — the periodic flush will persist this
     }
     return amount;
-  }
-
-  private void saveBalanceSafe(UUID uuid, Currency currency, BigDecimal amount) {
-    asyncExecutor.submit(() -> {
-      try {
-        saveBalance(uuid, currency, amount);
-        DatabaseFactory.ACCOUNTS.invalidate(uuid);
-      } catch (SQLException e) {
-        UltraEconomy.LOGGER.error("Error saving balance for " + uuid, e);
-      }
-    });
   }
 
   @Override
@@ -264,14 +258,14 @@ public class SQLClient extends DatabaseClient {
       ResultSet rs = stmt.executeQuery();
       return rs.next();
     } catch (SQLException e) {
-      UltraEconomy.LOGGER.error("Error checking existence of player with UUID " + uuid, e);
+      UltraEconomy.LOGGER.error("Error checking existence of player with UUID {}", uuid, e);
       return false;
     }
   }
 
 
   public void addTransaction(UUID uuid, Currency currency, BigDecimal amount, TransactionType type, boolean processed) {
-    asyncExecutor.execute(() -> {
+    UltraEconomy.runAsync(() -> {
       String query = SQLSentences.insertTransaction();
       try (Connection conn = dataSource.getConnection();
            PreparedStatement stmt = conn.prepareStatement(query)) {
@@ -282,20 +276,19 @@ public class SQLClient extends DatabaseClient {
         stmt.setBoolean(5, processed);
         stmt.executeUpdate();
       } catch (SQLException e) {
-        UltraEconomy.LOGGER.error("Error adding transaction for " + uuid, e);
+        UltraEconomy.LOGGER.error("Error adding transaction for {}", uuid, e);
       }
     });
   }
 
   @Override
   public CompletableFuture<?> createBackUp() {
-    return CompletableFuture.supplyAsync(() -> {
+    return UltraEconomy.runAsync(() -> {
       UUID backupUUID = UUID.randomUUID();
       Path backupDir = Path.of(UltraEconomy.PATH, "backups", "sql");
       try {
         Files.createDirectories(backupDir);
 
-        // Export all accounts with balances
         List<Map<String, Object>> accountsList = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement();
@@ -319,35 +312,32 @@ public class SQLClient extends DatabaseClient {
           }
         }
 
-        // Build backup metadata
         Map<String, Object> backup = new LinkedHashMap<>();
         backup.put("backup_uuid", backupUUID.toString());
         backup.put("created_at", Instant.now().toString());
         backup.put("account_count", accountsList.size());
         backup.put("accounts", accountsList);
 
-        // Write to JSON file
         com.google.gson.Gson gson = new com.google.gson.GsonBuilder().setPrettyPrinting().create();
         Path backupFile = backupDir.resolve(backupUUID + ".json");
         Files.writeString(backupFile, gson.toJson(backup), StandardCharsets.UTF_8);
 
         if (UltraEconomy.config.isDebug()) {
-          UltraEconomy.LOGGER.info("SQL backup created: " + backupUUID + " (" + accountsList.size() + " accounts)");
+          UltraEconomy.LOGGER.info("SQL backup created: {} ({} accounts)", backupUUID, accountsList.size());
         }
       } catch (Exception e) {
         UltraEconomy.LOGGER.error("Error creating SQL backup", e);
       }
       cleanOldBackUps();
-      return null;
-    }, asyncExecutor);
+    });
   }
 
   @Override
   public void loadBackUp(UUID backupUUID) {
-    asyncExecutor.submit(() -> {
+    UltraEconomy.runAsync(() -> {
       Path backupFile = Path.of(UltraEconomy.PATH, "backups", "sql", backupUUID + ".json");
       if (!Files.exists(backupFile)) {
-        UltraEconomy.LOGGER.warn("Backup file not found: " + backupUUID);
+        UltraEconomy.LOGGER.warn("Backup file not found: {}", backupUUID);
         return;
       }
       try {
@@ -359,20 +349,18 @@ public class SQLClient extends DatabaseClient {
         List<Map<String, Object>> accounts = (List<Map<String, Object>>) backup.get("accounts");
 
         if (accounts == null) {
-          UltraEconomy.LOGGER.error("Backup corrupted: no accounts found in " + backupUUID);
+          UltraEconomy.LOGGER.error("Backup corrupted: no accounts found in {}", backupUUID);
           return;
         }
 
         try (Connection conn = dataSource.getConnection()) {
           conn.setAutoCommit(false);
           try {
-            // Clear existing data
             try (Statement stmt = conn.createStatement()) {
               stmt.executeUpdate("DELETE FROM balances");
               stmt.executeUpdate("DELETE FROM accounts");
             }
 
-            // Restore accounts and balances
             for (Map<String, Object> accountMap : accounts) {
               String uuid = (String) accountMap.get("uuid");
               String playerName = (String) accountMap.get("player_name");
@@ -399,14 +387,14 @@ public class SQLClient extends DatabaseClient {
             }
             conn.commit();
             DatabaseFactory.ACCOUNTS.invalidateAll();
-            UltraEconomy.LOGGER.info("SQL backup restored: " + backupUUID + " (" + accounts.size() + " accounts)");
+            UltraEconomy.LOGGER.info("SQL backup restored: {} ({} accounts)", backupUUID, accounts.size());
           } catch (SQLException e) {
             conn.rollback();
             throw e;
           }
         }
       } catch (Exception e) {
-        UltraEconomy.LOGGER.error("Error restoring SQL backup: " + backupUUID, e);
+        UltraEconomy.LOGGER.error("Error restoring SQL backup: {}", backupUUID, e);
       }
     });
   }
@@ -426,7 +414,7 @@ public class SQLClient extends DatabaseClient {
           if (modified.isBefore(cutoff)) {
             Files.delete(file);
             if (UltraEconomy.config.isDebug()) {
-              UltraEconomy.LOGGER.info("Deleted old SQL backup: " + file.getFileName());
+              UltraEconomy.LOGGER.info("Deleted old SQL backup: {}", file.getFileName());
             }
           }
         }
@@ -457,7 +445,7 @@ public class SQLClient extends DatabaseClient {
             .build();
           backups.add(info);
         } catch (Exception e) {
-          UltraEconomy.LOGGER.warn("Could not read backup file: " + file.getFileName(), e);
+          UltraEconomy.LOGGER.warn("Could not read backup file: {}", file.getFileName(), e);
         }
       }
     } catch (Exception e) {
@@ -468,34 +456,45 @@ public class SQLClient extends DatabaseClient {
     return backups;
   }
 
+  /**
+   * Returns all accounts with their full balances using a single JOIN query to avoid N+1 queries.
+   */
   @Override
   public List<Account> getAccounts(int limit, int page) {
     List<Account> accounts = new ArrayList<>();
-    int offset = (page - 1) * limit;
+    int offset = Math.max(0, page - 1) * limit;
 
-    String query = "SELECT uuid, player_name FROM accounts LIMIT ? OFFSET ?";
+    // Single JOIN — one round-trip instead of 1 + N
+    String query = """
+      SELECT a.uuid, a.player_name, b.currency_id, b.amount
+      FROM accounts a
+      LEFT JOIN balances b ON a.uuid = b.account_uuid
+      ORDER BY a.uuid
+      LIMIT ? OFFSET ?
+      """;
 
     try (Connection conn = dataSource.getConnection();
          PreparedStatement stmt = conn.prepareStatement(query)) {
-      stmt.setInt(1, limit);
+      stmt.setInt(1, limit * 10); // Over-fetch to account for multiple balance rows per account
       stmt.setInt(2, offset);
       ResultSet rs = stmt.executeQuery();
 
+      Map<UUID, Account> accountMap = new LinkedHashMap<>();
+
       while (rs.next()) {
         UUID uuid = UUID.fromString(rs.getString("uuid"));
-        String playerName = rs.getString("player_name");
-
-        Map<String, BigDecimal> balances = new HashMap<>();
-        try (PreparedStatement balStmt = conn.prepareStatement(SQLSentences.selectBalancesByUUID())) {
-          balStmt.setString(1, uuid.toString());
-          ResultSet balRs = balStmt.executeQuery();
-          while (balRs.next()) {
-            balances.put(balRs.getString("currency_id"), balRs.getBigDecimal(KEY_AMOUNT));
-          }
+        if (!accountMap.containsKey(uuid)) {
+          if (accountMap.size() >= limit) break; // Collected enough distinct accounts
+          String playerName = rs.getString("player_name");
+          accountMap.put(uuid, new Account(uuid, playerName, new HashMap<>()));
         }
-
-        accounts.add(new Account(uuid, playerName, balances));
+        String currencyId = rs.getString("currency_id");
+        BigDecimal amount = rs.getBigDecimal(KEY_AMOUNT);
+        if (currencyId != null && amount != null) {
+          accountMap.get(uuid).getBalances().put(currencyId, amount);
+        }
       }
+      accounts.addAll(accountMap.values());
     } catch (SQLException e) {
       UltraEconomy.LOGGER.error("Error fetching accounts", e);
     }
@@ -515,26 +514,23 @@ public class SQLClient extends DatabaseClient {
       ResultSet rs = stmt.executeQuery();
 
       while (rs.next()) {
-        long id = rs.getLong("id");
         String currencyId = rs.getString("currency_id");
         BigDecimal amount = rs.getBigDecimal(KEY_AMOUNT);
         TransactionType type = TransactionType.valueOf(rs.getString("type"));
         Timestamp timestamp = rs.getTimestamp("timestamp");
         boolean processed = rs.getBoolean("processed");
 
-        var transaction = Transaction.builder()
+        transactions.add(Transaction.builder()
           .accountUUID(uuid)
           .amount(amount)
           .currency(currencyId)
           .type(type)
           .processed(processed)
           .timestamp(timestamp.toInstant())
-          .build();
-
-        transactions.add(transaction);
+          .build());
       }
     } catch (SQLException e) {
-      UltraEconomy.LOGGER.error("Error fetching transactions for " + uuid, e);
+      UltraEconomy.LOGGER.error("Error fetching transactions for {}", uuid, e);
     }
 
     return transactions;
@@ -562,11 +558,11 @@ public class SQLClient extends DatabaseClient {
         }
 
         Account account = new Account(uuid, name, balances);
-        DatabaseFactory.ACCOUNTS.put(uuid, account); // Cacheamos la cuenta
+        DatabaseFactory.ACCOUNTS.put(uuid, account);
         return account;
       }
     } catch (SQLException e) {
-      UltraEconomy.LOGGER.error("Error fetching account by name " + name, e);
+      UltraEconomy.LOGGER.error("Error fetching account by name {}", name, e);
     }
 
     return null;
@@ -584,13 +580,12 @@ public class SQLClient extends DatabaseClient {
       .map(p -> p.getUuidAsString())
       .toList();
 
-    // Build parameterized IN clause for online players only
     String placeholders = String.join(",", Collections.nCopies(onlineUUIDs.size(), "?"));
     String selectSQL = "SELECT id, account_uuid, currency_id, amount, type FROM transactions " +
       "WHERE processed = FALSE AND account_uuid IN (" + placeholders + ") ORDER BY id";
 
-    // Row-level locking for MySQL/MariaDB/H2 to prevent duplicate processing across servers.
-    // SQLite uses file-level locking (single-server only) so FOR UPDATE is not needed/supported.
+    // Row-level locking for MySQL/MariaDB/H2 prevents duplicate processing across servers.
+    // SQLite uses file-level locking (single-server only) so FOR UPDATE is not needed.
     if (dbType != DataBaseType.SQLITE) {
       selectSQL += " FOR UPDATE";
     }
@@ -619,7 +614,7 @@ public class SQLClient extends DatabaseClient {
           try {
             type = TransactionType.valueOf(rs.getString("type"));
           } catch (IllegalArgumentException e) {
-            UltraEconomy.LOGGER.warn("Invalid transaction type for ID " + id + ", marking processed.");
+            UltraEconomy.LOGGER.warn("Invalid transaction type for ID {}, marking processed.", id);
             try (PreparedStatement update = conn.prepareStatement(SQLSentences.markTransactionProcessed())) {
               update.setLong(1, id);
               update.executeUpdate();
@@ -627,25 +622,23 @@ public class SQLClient extends DatabaseClient {
             continue;
           }
 
-          // Apply directly to Account to AVOID creating duplicate transactions.
-          // UltraEconomyApi methods call addTransaction() internally, which would
-          // create a processed=true copy for every pending transaction processed.
+          // Apply directly to Account to avoid creating duplicate transaction records.
           switch (type) {
             case DEPOSIT -> account.addBalance(currency, amount);
             case WITHDRAW -> {
               if (!account.removeBalance(currency, amount) && UltraEconomy.config.isDebug()) {
-                UltraEconomy.LOGGER.warn("Insufficient funds for pending WITHDRAW ID " + id
-                  + " (uuid=" + uuid + ", amount=" + amount + ")");
+                UltraEconomy.LOGGER.warn("Insufficient funds for pending WITHDRAW ID {} (uuid={}, amount={})",
+                  id, uuid, amount);
               }
             }
             case SET -> account.setBalance(currency, amount);
             default -> {
-              UltraEconomy.LOGGER.warn("Unhandled transaction type " + type + " for ID " + id);
+              UltraEconomy.LOGGER.warn("Unhandled transaction type {} for ID {}", type, id);
               continue;
             }
           }
 
-          // Mark as processed inside the same transaction (still holding row lock)
+          // Mark as processed inside the same DB transaction (still holding the row lock)
           try (PreparedStatement update = conn.prepareStatement(SQLSentences.markTransactionProcessed())) {
             update.setLong(1, id);
             update.executeUpdate();
@@ -662,7 +655,6 @@ public class SQLClient extends DatabaseClient {
       UltraEconomy.LOGGER.error("Error processing transactions", e);
     }
 
-    // Persist all modified accounts to DB
     for (UUID uuid : modifiedAccounts) {
       Account account = DatabaseFactory.ACCOUNTS.getIfPresent(uuid);
       if (account != null && account.isDirty()) {
@@ -671,11 +663,9 @@ public class SQLClient extends DatabaseClient {
     }
   }
 
-  // Métodos privados para inicialización de tablas, índices y columna processed
   private void initTables(DataBaseType type) throws SQLException {
     try (Connection conn = dataSource.getConnection(); Statement stmt = conn.createStatement()) {
 
-      // Accounts table
       String accountTable = switch (type) {
         case SQLITE -> """
           CREATE TABLE IF NOT EXISTS accounts (
@@ -693,7 +683,6 @@ public class SQLClient extends DatabaseClient {
       };
       stmt.executeUpdate(accountTable);
 
-      // Balances table
       String balanceTable = switch (type) {
         case SQLITE -> """
           CREATE TABLE IF NOT EXISTS balances (
@@ -717,7 +706,6 @@ public class SQLClient extends DatabaseClient {
       };
       stmt.executeUpdate(balanceTable);
 
-      // Transactions table
       String transactionTable = switch (type) {
         case SQLITE -> """
           CREATE TABLE IF NOT EXISTS transactions (
@@ -751,13 +739,12 @@ public class SQLClient extends DatabaseClient {
 
 
   private void createIndexes() {
-    asyncExecutor.submit(() -> {
+    UltraEconomy.runAsync(() -> {
       try (Connection conn = dataSource.getConnection(); Statement stmt = conn.createStatement()) {
         stmt.executeUpdate("CREATE INDEX if NOT EXISTS idx_balances_currency_amount ON balances(currency_id, amount DESC)");
         stmt.executeUpdate("CREATE INDEX if NOT EXISTS idx_transactions_account_processed ON transactions(account_uuid, processed)");
         stmt.executeUpdate("CREATE INDEX if NOT EXISTS idx_transactions_account_currency ON transactions(account_uuid, currency_id)");
-        stmt.executeUpdate("CREATE INDEX if NOT EXISTS idx_transactions_type_account ON transactions(\"type\", " +
-          "account_uuid)");
+        stmt.executeUpdate("CREATE INDEX if NOT EXISTS idx_transactions_type_account ON transactions(\"type\", account_uuid)");
         stmt.executeUpdate("CREATE INDEX if NOT EXISTS idx_transactions_timestamp ON transactions(\"timestamp\")");
       } catch (SQLException e) {
         UltraEconomy.LOGGER.error("Error creating indexes", e);
@@ -766,15 +753,6 @@ public class SQLClient extends DatabaseClient {
   }
 
 
-  private void saveBalance(UUID uuid, Currency currency, BigDecimal amount) throws SQLException {
-    try (Connection conn = dataSource.getConnection();
-         PreparedStatement stmt = conn.prepareStatement(SQLSentences.insertBalance())) {
-      stmt.setString(1, uuid.toString());
-      stmt.setString(2, currency.getId());
-      stmt.setBigDecimal(3, amount);
-      stmt.executeUpdate();
-    }
-  }
 
   @Override
   public boolean isConnected() {

@@ -6,6 +6,7 @@ const CHART_JS_URL = 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min
 
 const money = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const dateFmt = new Intl.DateTimeFormat('en-US', { month: '2-digit', day: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+const datePreciseFmt = new Intl.DateTimeFormat('en-US', { month: '2-digit', day: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 })
 
 let allTransactions = []
 let selectedCurrency = null
@@ -21,8 +22,6 @@ const TYPE_META = {
   TRANSFER: { label: 'Transfer', dotClass: 'type-dot-transfer', pillClass: 'pill-blue',    sign: '→', textClass: 'text-accent' }
 }
 
-/* ======================== Page Shell ======================== */
-
 export async function PlayerPage () {
   return `
     ${Navbar()}
@@ -36,8 +35,6 @@ export async function PlayerPage () {
     </div>
   `
 }
-
-/* ======================== After Render ======================== */
 
 PlayerPage.afterRender = async function ({ uuid }) {
   const container = document.getElementById('playerContent')
@@ -56,7 +53,6 @@ PlayerPage.afterRender = async function ({ uuid }) {
 
     allTransactions = transactions || []
 
-    /* Balance rows */
     const balanceRows = Object.entries(player.balances || {})
       .map(([cur, amt]) => `
         <tr>
@@ -138,13 +134,10 @@ PlayerPage.afterRender = async function ({ uuid }) {
     container.innerHTML = '<div class="state-box"><p>Error loading player data</p></div>'
   }
 
-  /* Cleanup for router */
   return () => {
     if (chartInstance) { chartInstance.destroy(); chartInstance = null }
   }
 }
-
-/* ======================== Selectors ======================== */
 
 function initSelectors () {
   const curSelect = document.getElementById('currencySelect')
@@ -169,8 +162,6 @@ function initSelectors () {
   daysSelect.addEventListener('change', onChange)
 }
 
-/* ======================== Type Filter Pills ======================== */
-
 function renderTypePills () {
   const el = document.getElementById('typePills')
   if (!el) return
@@ -194,8 +185,10 @@ function renderTypePills () {
   })
 }
 
-/* ======================== Filter helpers ======================== */
-
+/**
+ * Filter transactions by currency and the selected lookback window.
+ * The chart and summary reuse this slice so they stay in sync.
+ */
 function getCurrencyFiltered () {
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - selectedDays + 1)
@@ -210,8 +203,6 @@ function getFiltered () {
   if (activeTypeFilter === 'ALL') return list
   return list.filter(tx => tx.type === activeTypeFilter)
 }
-
-/* ======================== Summary Stats ======================== */
 
 function renderSummary () {
   const el = document.getElementById('summaryStats')
@@ -247,8 +238,6 @@ function renderSummary () {
   `
 }
 
-/* ======================== Transactions Table ======================== */
-
 function renderTransactions () {
   const tbody = document.getElementById('txBody')
   const pagEl = document.getElementById('txPagination')
@@ -270,7 +259,7 @@ function renderTransactions () {
     const meta = TYPE_META[tx.type] || { label: tx.type, dotClass: '', sign: '', textClass: 'text-muted' }
     return `
       <tr>
-        <td class="text-muted">${dateFmt.format(new Date(tx.timestamp))}</td>
+        <td class="text-muted">${datePreciseFmt.format(new Date(tx.timestamp))}</td>
         <td class="text-center">
           <span class="type-dot ${meta.dotClass}"></span>
           <span class="${meta.textClass}" style="font-weight:600">${meta.label}</span>
@@ -291,8 +280,6 @@ function renderTransactions () {
   document.getElementById('txNext')?.addEventListener('click', () => { currentPage++; renderTransactions() })
 }
 
-/* ======================== Chart (lazy-loaded) ======================== */
-
 async function initChart () {
   try {
     await loadScript(CHART_JS_URL)
@@ -312,17 +299,17 @@ function waitForLayout () {
   })
 }
 
-function renderChart () {
-  const ctx = document.getElementById('moneyChart')
-  if (!ctx || typeof Chart === 'undefined') return
-  if (chartInstance) chartInstance.destroy()
+function renderChart () { // NOSONAR - orchestration only; branching lives in helpers
+  renderChartForCanvas(getChartCanvas(), buildChartSeries(getCurrencyFiltered()))
+}
 
-  const filtered = getCurrencyFiltered()
+function buildChartSeries (transactions) {
   const depositMap = {}
   const withdrawMap = {}
 
-  for (const tx of filtered) {
+  for (const tx of transactions) {
     if (!tx.processed) continue
+    // Group points by hour so the line chart stays readable without changing the visual design.
     const key = new Date(tx.timestamp).toISOString().slice(0, 13) + ':00'
     if (tx.type === 'DEPOSIT') {
       depositMap[key] = (depositMap[key] || 0) + tx.amount
@@ -331,52 +318,42 @@ function renderChart () {
     }
   }
 
-  const allKeys = [...new Set([...Object.keys(depositMap), ...Object.keys(withdrawMap)])].sort()
+  const keys = [...new Set([...Object.keys(depositMap), ...Object.keys(withdrawMap)])]
+    .sort((a, b) => a.localeCompare(b))
 
-  if (!allKeys.length) {
-    const wrapper = ctx.parentElement
-    if (wrapper) {
-      ctx.style.display = 'none'
-      if (!wrapper.querySelector('.chart-empty')) {
-        wrapper.insertAdjacentHTML('beforeend', '<div class="chart-empty">No chart data for this period</div>')
-      }
-    }
-    return
+  return {
+    labels: keys.map(k => dateFmt.format(new Date(k))),
+    depositData: keys.map(k => depositMap[k] || 0),
+    withdrawData: keys.map(k => withdrawMap[k] || 0),
+    compact: keys.length > 50
   }
+}
 
-  ctx.style.display = ''
-  const emptyMsg = ctx.parentElement?.querySelector('.chart-empty')
-  if (emptyMsg) emptyMsg.remove()
-
-  const labels = allKeys.map(k => dateFmt.format(new Date(k)))
-  const depositData = allKeys.map(k => depositMap[k] || 0)
-  const withdrawData = allKeys.map(k => withdrawMap[k] || 0)
-  const compact = allKeys.length > 50
-
-  chartInstance = new Chart(ctx, {
+function createChartConfig (chartData) {
+  return {
     type: 'line',
     data: {
-      labels,
+      labels: chartData.labels,
       datasets: [
         {
           label: `Deposits (${selectedCurrency})`,
-          data: depositData,
+          data: chartData.depositData,
           borderColor: '#22c55e',
           backgroundColor: 'rgba(34,197,94,0.08)',
           tension: 0.35,
           fill: true,
-          pointRadius: compact ? 0 : 3,
+          pointRadius: chartData.compact ? 0 : 3,
           pointHoverRadius: 5,
           borderWidth: 2
         },
         {
           label: `Withdrawals (${selectedCurrency})`,
-          data: withdrawData,
+          data: chartData.withdrawData,
           borderColor: '#ef4444',
           backgroundColor: 'rgba(239,68,68,0.08)',
           tension: 0.35,
           fill: true,
-          pointRadius: compact ? 0 : 3,
+          pointRadius: chartData.compact ? 0 : 3,
           pointHoverRadius: 5,
           borderWidth: 2
         }
@@ -419,10 +396,54 @@ function renderChart () {
         },
         y: {
           beginAtZero: true,
-          ticks: { color: '#64748b', font: { size: 11 }, callback: v => money.format(v) },
+          ticks: { color: '#64748b', font: { size: 11 } },
           grid: { color: 'rgba(255,255,255,0.03)' }
         }
       }
     }
-  })
+  }
 }
+
+function getChartCanvas () {
+  if (typeof Chart === 'undefined') return null
+  return document.getElementById('moneyChart')
+}
+
+function drawChart (canvas, chartData) {
+  if (chartInstance) chartInstance.destroy()
+  clearChartEmptyState(canvas)
+  chartInstance = new Chart(canvas, createChartConfig(chartData))
+}
+
+function renderChartForCanvas (canvas, chartData) {
+  if (!canvas) return
+  if (handleEmptyChartState(canvas, chartData)) return
+  drawChart(canvas, chartData)
+}
+
+function handleEmptyChartState (canvas, chartData) {
+  if (chartData.labels.length > 0) {
+    clearChartEmptyState(canvas)
+    return false
+  }
+
+  showChartEmptyState(canvas, 'No chart data for this period')
+  return true
+}
+
+function showChartEmptyState (canvas, message) {
+  const wrapper = canvas.parentElement
+  if (!wrapper) return
+
+  canvas.style.display = 'none'
+  if (!wrapper.querySelector('.chart-empty')) {
+    wrapper.insertAdjacentHTML('beforeend', `<div class="chart-empty">${message}</div>`)
+  }
+}
+
+function clearChartEmptyState (canvas) {
+  canvas.style.display = ''
+  const emptyMsg = canvas.parentElement?.querySelector('.chart-empty')
+  if (emptyMsg) emptyMsg.remove()
+}
+

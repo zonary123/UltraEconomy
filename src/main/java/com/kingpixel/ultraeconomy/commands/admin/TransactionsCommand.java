@@ -1,5 +1,6 @@
 package com.kingpixel.ultraeconomy.commands.admin;
 
+import com.kingpixel.cobbleutils.api.PermissionApi;
 import com.kingpixel.cobbleutils.command.suggests.CobbleUtilsSuggests;
 import com.kingpixel.cobbleutils.util.AdventureTranslator;
 import com.kingpixel.ultraeconomy.UltraEconomy;
@@ -20,11 +21,15 @@ import java.util.UUID;
  * Accepts both online and offline players.
  */
 public class TransactionsCommand {
+  private TransactionsCommand() {
+    /* This utility class should not be instantiated */
+  }
+
 
   public static void register(LiteralArgumentBuilder<ServerCommandSource> base) {
     base.then(
       CommandManager.literal("transactions")
-        .requires(source -> source.hasPermissionLevel(2))
+        .requires(source -> PermissionApi.hasPermission(source, "ultraeconomy.admin.transactions", 2))
         .then(
           CobbleUtilsSuggests.SUGGESTS_PLAYER_OFFLINE_AND_ONLINE
             .suggestPlayerName("target", List.of("ultraeconomy.admin.transactions"), 2)

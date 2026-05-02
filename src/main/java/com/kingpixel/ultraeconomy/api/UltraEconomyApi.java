@@ -21,11 +21,23 @@ import javax.annotation.Nullable;
 import java.math.BigDecimal;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * @author Carlos Varas Alonso - 23/09/2025 20:50
  */
 public class UltraEconomyApi {
+
+  /**
+   * Per-UUID lock objects used to prevent concurrent balance modifications on the same account.
+   * Locks are always acquired in UUID natural order to prevent deadlocks in transfer().
+   */
+  private static final ConcurrentHashMap<UUID, Object> ACCOUNT_LOCKS = new ConcurrentHashMap<>();
+
+  /** Returns the canonical lock object for the given UUID, creating it if absent. */
+  private static Object getLock(UUID uuid) {
+    return ACCOUNT_LOCKS.computeIfAbsent(uuid, k -> new Object());
+  }
   /**
    * Get the account of a target by UUID
    *
@@ -228,6 +240,19 @@ public class UltraEconomyApi {
 
 
   public static boolean transfer(UUID executor, UUID target, String currency, BigDecimal amount) {
+    // Acquire locks in a consistent order (UUID natural sort) to prevent deadlocks when two
+    // transfers run simultaneously between the same pair of accounts in opposite directions.
+    UUID first = executor.compareTo(target) <= 0 ? executor : target;
+    UUID second = executor.compareTo(target) <= 0 ? target : executor;
+
+    synchronized (getLock(first)) {
+      synchronized (getLock(second)) {
+        return doTransfer(executor, target, currency, amount);
+      }
+    }
+  }
+
+  private static boolean doTransfer(UUID executor, UUID target, String currency, BigDecimal amount) {
     long start = System.currentTimeMillis();
     Currency curr = getCurrency(currency);
     String nameTarget = CobbleUtilsSuggests.SUGGESTS_PLAYER_OFFLINE_AND_ONLINE.getPlayerNameWithUUID(target);
@@ -293,7 +318,7 @@ public class UltraEconomyApi {
       UltraEconomy.LOGGER.info("Pay took " + (end - start) + "ms");
     }
     return true;
-  }
+  }  // end doTransfer
 
   /**
    * Save an account to the database and mark it as clean.

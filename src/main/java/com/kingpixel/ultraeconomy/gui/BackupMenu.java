@@ -4,6 +4,8 @@ import ca.landonjw.gooeylibs2.api.UIManager;
 import ca.landonjw.gooeylibs2.api.button.GooeyButton;
 import ca.landonjw.gooeylibs2.api.page.GooeyPage;
 import ca.landonjw.gooeylibs2.api.template.types.ChestTemplate;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.kingpixel.cobbleutils.util.AdventureTranslator;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.database.DatabaseFactory;
@@ -15,7 +17,7 @@ import net.minecraft.item.Items;
 import net.minecraft.server.network.ServerPlayerEntity;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * GUI menu for listing and restoring backups.
@@ -23,8 +25,15 @@ import java.util.concurrent.ConcurrentHashMap;
 public class BackupMenu {
   private static final int ROWS = 6;
   private static final int ITEMS_PER_PAGE = 45;
-  // Tracks players who have clicked once on a backup (confirmation step)
-  private static final Set<UUID> pendingConfirm = ConcurrentHashMap.newKeySet();
+
+  /**
+   * Tracks players awaiting confirmation before a rollback executes.
+   * TTL of 30 s: if no second click arrives in time, the pending state clears automatically
+   * so the player can't accidentally confirm a restore on a future menu open.
+   */
+  private static final Cache<UUID, Boolean> pendingConfirm = Caffeine.newBuilder()
+    .expireAfterWrite(30, TimeUnit.SECONDS)
+    .build();
 
   public static void open(ServerPlayerEntity player, int page) {
     UltraEconomy.runAsync(() -> {
@@ -68,16 +77,16 @@ public class BackupMenu {
           .with(DataComponentTypes.LORE, new LoreComponent(AdventureTranslator.toNativeL(loreStrings)))
           .onClick(action -> {
             UUID playerUUID = player.getUuid();
-            if (pendingConfirm.contains(playerUUID)) {
+            if (pendingConfirm.getIfPresent(playerUUID) != null) {
               // Second click — confirmed, execute restore
-              pendingConfirm.remove(playerUUID);
+              pendingConfirm.invalidate(playerUUID);
               UIManager.closeUI(player);
               DatabaseFactory.INSTANCE.loadBackUp(info.getBackupUUID());
               player.sendMessage(
                 AdventureTranslator.toNative(UltraEconomy.lang.getMessageBackupRestored()), false);
             } else {
-              // First click — ask for confirmation
-              pendingConfirm.add(playerUUID);
+              // First click — ask for confirmation; TTL handles expiry automatically
+              pendingConfirm.put(playerUUID, true);
               player.sendMessage(
                 AdventureTranslator.toNative(UltraEconomy.lang.getBackupMenuRestoreConfirm()), false);
             }
@@ -90,12 +99,11 @@ public class BackupMenu {
         slot++;
       }
 
-      // Navigation buttons (row 5 = last row in 6-row chest)
       if (hasPrevPage) {
         ItemStack prevIcon = new ItemStack(Items.ARROW);
         GooeyButton prevButton = GooeyButton.builder()
           .display(prevIcon)
-          .with(DataComponentTypes.CUSTOM_NAME, AdventureTranslator.toNative("&aPrevious Page"))
+          .with(DataComponentTypes.CUSTOM_NAME, AdventureTranslator.toNative(UltraEconomy.lang.getMenuPreviousPage()))
           .onClick(action -> open(player, page - 1))
           .build();
         template.set(5, 0, prevButton);
@@ -105,9 +113,9 @@ public class BackupMenu {
       ItemStack closeIcon = new ItemStack(Items.BARRIER);
       GooeyButton closeButton = GooeyButton.builder()
         .display(closeIcon)
-        .with(DataComponentTypes.CUSTOM_NAME, AdventureTranslator.toNative("&cClose"))
+        .with(DataComponentTypes.CUSTOM_NAME, AdventureTranslator.toNative(UltraEconomy.lang.getMenuClose()))
         .onClick(action -> {
-          pendingConfirm.remove(player.getUuid());
+          pendingConfirm.invalidate(player.getUuid());
           UIManager.closeUI(player);
         })
         .build();
@@ -117,7 +125,7 @@ public class BackupMenu {
         ItemStack nextIcon = new ItemStack(Items.ARROW);
         GooeyButton nextButton = GooeyButton.builder()
           .display(nextIcon)
-          .with(DataComponentTypes.CUSTOM_NAME, AdventureTranslator.toNative("&aNext Page"))
+          .with(DataComponentTypes.CUSTOM_NAME, AdventureTranslator.toNative(UltraEconomy.lang.getMenuNextPage()))
           .onClick(action -> open(player, page + 1))
           .build();
         template.set(5, 8, nextButton);
@@ -126,7 +134,7 @@ public class BackupMenu {
       GooeyPage pageMenu = GooeyPage.builder()
         .template(template)
         .title(AdventureTranslator.toNative(UltraEconomy.lang.getBackupMenuTitle()))
-        .onClose(action -> pendingConfirm.remove(player.getUuid()))
+        .onClose(action -> pendingConfirm.invalidate(player.getUuid()))
         .build();
 
       UltraEconomy.server.execute(() -> UIManager.openUIForcefully(player, pageMenu));

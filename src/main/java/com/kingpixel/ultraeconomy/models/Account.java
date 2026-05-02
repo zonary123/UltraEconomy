@@ -196,9 +196,12 @@ public class Account {
   }
 
   public void fix() {
-    var map = Currencies.getCurrencyMap();
-    map.forEach((k, v) ->
-      balances.putIfAbsent(v.getId(), v.getDefaultBalance()));
+    Currencies.getCurrencyMap().forEach((k, v) -> {
+      // putIfAbsent returns null when the key is new — mark dirty so the new currency gets persisted
+      if (balances.putIfAbsent(v.getId(), v.getDefaultBalance()) == null) {
+        markDirty();
+      }
+    });
   }
 
   private ConcurrentHashMap<String, BigDecimal> defaultBalances() {

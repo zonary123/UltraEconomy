@@ -4,47 +4,15 @@ plugins {
   id "com.modrinth.minotaur" version "2.+"
 }
 
+// Version del mod (release fija, sin sufijo dev)R
+version = project.mod_version
+
+group = project.maven_group
+
+// Configurar el nombre del archivo (Gradle 9.x compatible)
 base {
   archivesName = project.archives_base_name
 }
-
-// Variable global
-ext.HASH_ID = null
-
-// Leer isDev desde gradle.properties (default: false)
-def isDev = project.hasProperty("isDev") ? project.property("isDev").toBoolean() : false
-
-// Obtener hash de Git
-if (isDev) {
-  try {
-    def stdout = new ByteArrayOutputStream()
-    exec {
-      workingDir project.rootDir
-      commandLine 'git', 'rev-parse', '--short', 'HEAD'
-      standardOutput = stdout
-      ignoreExitValue = true
-    }
-    def hash = stdout.toString().trim()
-    if (hash) {
-      project.ext.HASH_ID = hash
-    } else {
-      def githubSha = System.getenv("GITHUB_SHA")
-      project.ext.HASH_ID = githubSha ? githubSha.take(7) : "unknown"
-    }
-  } catch (Exception ignored) {
-    project.ext.HASH_ID = "unknown"
-  }
-  println("Git hash detectado: ${project.ext.HASH_ID}")
-} else {
-  project.ext.HASH_ID = ""
-}
-
-// Construcción de la versión final
-def devSuffix = isDev && project.ext.HASH_ID ? "-dev-${project.ext.HASH_ID}" : ""
-version = project.mod_version + devSuffix
-println("Versión final del mod: ${version}")
-
-group = project.maven_group
 
 loom {
   splitEnvironmentSourceSets()
@@ -57,29 +25,10 @@ loom {
   }
 }
 
-tasks.named('jar') {
-  archiveBaseName.set(project.archives_base_name)
-  archiveVersion.set(version)
-  archiveClassifier.set('')
-  // 🔹 Esto se hace en tiempo de configuración, no en doFirst
-  from("LICENSE") {
-    rename { "${it}_${project.archives_base_name}" }
-  }
-}
-
 fabricApi {
-  configureDataGeneration { client = true }
-}
-
-modrinth {
-  token = System.getenv("MODRINTH_TOKEN")
-  projectId = "UltraEconomy"
-  versionNumber = project.version
-  versionType = "release"
-  uploadFile = tasks.named("remapJar").flatMap { it.archiveFile }.get().asFile
-  gameVersions = ["1.21.1"]
-  loaders = ["fabric"]
-  changelog = System.getenv("CHANGELOG") ?: "Automatic upload."
+  configureDataGeneration {
+    client = true
+  }
 }
 
 repositories {
@@ -188,7 +137,7 @@ java {
 publishing {
   publications {
     create("mavenJava", MavenPublication) {
-      artifactId = project.archives_base_name
+      artifactId = base.archivesName.get()
       from components.java
     }
   }

@@ -6,6 +6,7 @@ import com.kingpixel.ultraeconomy.web.server.api.PlayerApiServlet;
 import com.kingpixel.ultraeconomy.web.server.api.PlayersApiServlet;
 import com.kingpixel.ultraeconomy.web.server.api.StatsApiServlet;
 import com.kingpixel.ultraeconomy.web.server.api.TransactionPlayerApiServlet;
+import com.kingpixel.ultraeconomy.web.server.filter.ApiAuthFilter;
 import com.kingpixel.ultraeconomy.web.server.filter.RateLimitFilter;
 import com.kingpixel.ultraeconomy.web.server.filter.SecurityHeadersFilter;
 import jakarta.servlet.*;
@@ -21,7 +22,10 @@ import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlets.CrossOriginFilter;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.EnumSet;
+import java.util.Objects;
 
 public class WebServer {
 
@@ -33,46 +37,27 @@ public class WebServer {
     this.port = port;
   }
 
+  /**
+   * Start Jetty with security filters, API servlets, static assets, and SPA fallback.
+   * The filter order matters: rate limiting must run before any other work.
+   */
   public void start() {
     try {
-      // -----------------------------
-      // Configurar connector con timeouts de seguridad
-      // -----------------------------
       configureConnector();
 
       ServletContextHandler context = new ServletContextHandler();
       context.setContextPath("/");
 
-      // -----------------------------
-      // Filtros de seguridad (PRIMERO — antes de todo)
-      // -----------------------------
       registerSecurityFilters(context);
 
-      // -----------------------------
-      // Configurar CORS si está en modo debug
-      // -----------------------------
       if (UltraEconomy.config.isDebug()) {
         registerCors(context);
       }
 
-      // -----------------------------
-      // Configurar API
-      // -----------------------------
       registerApiServlets(context);
-
-      // -----------------------------
-      // Servir archivos estáticos
-      // -----------------------------
       registerStaticFiles(context);
-
-      // -----------------------------
-      // Filtro SPA fallback
-      // -----------------------------
       registerSpaFallback(context);
 
-      // -----------------------------
-      // Iniciar servidor
-      // -----------------------------
       server.setHandler(context);
       server.start();
       UltraEconomy.LOGGER.info("[Web] Server started on port {} with security filters enabled", port);
@@ -81,6 +66,9 @@ public class WebServer {
     }
   }
 
+  /**
+   * Stop Jetty and report shutdown failures through the mod logger.
+   */
   public void stop() {
     try {
       server.stop();
@@ -89,16 +77,8 @@ public class WebServer {
     }
   }
 
-  // =============================
-  // MÉTODOS PRIVADOS
-  // =============================
-
   /**
-   * Configure Jetty connector with security-oriented timeouts.
-   * <p>
-   * - Idle timeout: closes slow/abandoned connections (slow-loris protection)
-   * - Request header size: limits oversized headers
-   * - Response header size: sane default
+   * Configure the connector to limit idle time and avoid exposing Jetty version details.
    */
   private void configureConnector() {
     WebSecurityConfig security = UltraEconomy.config.getWebSecurity();
@@ -112,7 +92,7 @@ public class WebServer {
     HttpConfiguration httpConfig = new HttpConfiguration();
     httpConfig.setRequestHeaderSize(8192);
     httpConfig.setResponseHeaderSize(8192);
-    httpConfig.setSendServerVersion(false); // Don't expose Jetty version
+    httpConfig.setSendServerVersion(false);
     httpConfig.setSendDateHeader(true);
 
     ServerConnector connector = new ServerConnector(server, new HttpConnectionFactory(httpConfig));
@@ -120,14 +100,12 @@ public class WebServer {
     connector.setIdleTimeout(idleTimeout);
     server.addConnector(connector);
 
-    // Limit request body size (this server only handles GET, so keep it small)
     server.setAttribute("org.eclipse.jetty.server.Request.maxFormContentSize", maxRequestBody);
   }
 
   /**
-   * Register security filters in correct order:
-   * 1. Rate Limiting (reject abusive traffic ASAP)
-   * 2. Security Headers (add protective headers to all responses)
+   * Register security middleware before API/static handlers.
+   * Rate limiting must execute first so abusive requests are rejected immediately.
    */
   private void registerSecurityFilters(ServletContextHandler context) {
     WebSecurityConfig security = UltraEconomy.config.getWebSecurity();
@@ -137,9 +115,10 @@ public class WebServer {
       return;
     }
 
-    // Order matters: rate limit FIRST to reject abuse before any processing
     RateLimitFilter.register(context);
     SecurityHeadersFilter.register(context);
+    // Token auth runs after rate-limiting so abusive IPs are rejected before auth processing
+    ApiAuthFilter.register(context);
 
     UltraEconomy.LOGGER.info("[WebSecurity] Filters active — API rate: {}/s (burst {}), " +
         "Static rate: {}/s (burst {}), Ban after {} violations for {} min",
@@ -148,6 +127,9 @@ public class WebServer {
       security.getBanThreshold(), security.getBanDurationMinutes());
   }
 
+  /**
+   * Register public JSON endpoints used by the SPA.
+   */
   private void registerApiServlets(ServletContextHandler context) {
     context.addServlet(StatsApiServlet.class, "/api/stats");
     context.addServlet(PlayersApiServlet.class, "/api/players");
@@ -155,6 +137,9 @@ public class WebServer {
     context.addServlet(PlayerApiServlet.class, "/api/player/*");
   }
 
+  /**
+   * Enable CORS only in debug mode so production keeps the same-origin policy.
+   */
   private void registerCors(ServletContextHandler context) {
     FilterHolder cors = context.addFilter(CrossOriginFilter.class, "/*", EnumSet.of(DispatcherType.REQUEST));
     cors.setInitParameter(CrossOriginFilter.ALLOWED_ORIGINS_PARAM, "*");
@@ -162,17 +147,22 @@ public class WebServer {
     cors.setInitParameter(CrossOriginFilter.ALLOWED_HEADERS_PARAM, "X-Requested-With,Content-Type,Accept,Origin");
   }
 
+  /**
+   * Serve the SPA assets from `src/main/resources/web`.
+   */
   private void registerStaticFiles(ServletContextHandler context) {
-    context.setResourceBase(getClass().getClassLoader().getResource("web").toExternalForm());
-    context.addServlet(DefaultServlet.class, "/"); // Sirve todos los archivos existentes
+    context.setResourceBase(Objects.requireNonNull(
+      getClass().getClassLoader().getResource("web"),
+      "web resources not found"
+    ).toExternalForm());
+    context.addServlet(DefaultServlet.class, "/");
   }
 
+  /**
+   * Let the SPA handle client routes while preserving real files and `/api/*`.
+   */
   private void registerSpaFallback(ServletContextHandler context) {
     FilterHolder spaFallback = new FilterHolder(new Filter() {
-      @Override
-      public void init(FilterConfig filterConfig) {
-      }
-
       @Override
       public void doFilter(ServletRequest request,
                            ServletResponse response,
@@ -182,24 +172,20 @@ public class WebServer {
 
         String path = req.getRequestURI();
 
-        // Si es API o archivo existente, dejamos pasar
         if (path.startsWith("/api/") || resourceExists(path)) {
           chain.doFilter(request, response);
           return;
         }
 
-        // Devolver index.html para SPA
         resp.setContentType("text/html");
-        resp.getWriter().write(
-          new String(getClass().getClassLoader()
-            .getResourceAsStream("web/index.html")
-            .readAllBytes())
-        );
+        try (InputStream input = getClass().getClassLoader().getResourceAsStream("web/index.html")) {
+          if (input == null) {
+            throw new IOException("web/index.html not found");
+          }
+          resp.getWriter().write(new String(input.readAllBytes(), StandardCharsets.UTF_8));
+        }
       }
 
-      @Override
-      public void destroy() {
-      }
 
       private boolean resourceExists(String path) {
         return getClass().getClassLoader().getResource("web" + path) != null;
