@@ -44,7 +44,7 @@ public class DatabaseFactory {
     }
     return builder
       .removalListener((UUID key, Account account, com.github.benmanes.caffeine.cache.RemovalCause cause) -> {
-        if (account != null && account.isDirty() && INSTANCE != null) {
+        if (account.isDirty() && INSTANCE != null) {
           INSTANCE.saveOrUpdateAccount(account);
         }
       })

@@ -62,9 +62,9 @@ public abstract class ImpactorAccountMixin {
         .amount(amount)
         .type(EconomyTransactionType.WITHDRAW);
       if (UltraEconomyApi.withdraw(self.owner(), getCurrencyId(self.currency()), amount)) {
-        cir.setReturnValue(builder.result(EconomyResultType.FAILED).build());
-      } else {
         cir.setReturnValue(builder.result(EconomyResultType.SUCCESS).build());
+      } else {
+        cir.setReturnValue(builder.result(EconomyResultType.FAILED).build());
       }
     }
   }
@@ -102,7 +102,6 @@ public abstract class ImpactorAccountMixin {
   @Inject(method = "save", at = @At("HEAD"), remap = false)
   private void save(CallbackInfo ci) {
     if (UltraEconomy.migrationDone) {
-      // Do nothing, as UltraEconomyApi methods already save the account
       UltraEconomyApi.saveAccount(UltraEconomyApi.getAccount(((ImpactorAccount) (Object) this).owner()));
     }
   }
@@ -117,5 +116,6 @@ public abstract class ImpactorAccountMixin {
       cir.setReturnValue(balance);
     }
   }
+
 
 }

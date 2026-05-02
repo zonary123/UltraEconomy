@@ -41,7 +41,7 @@ public class SQLSentences {
     switch (getType()) {
       case SQLITE -> {
         Class.forName("org.sqlite.JDBC");
-        hikariConfig.setJdbcUrl("jdbc:sqlite:config/ultraeconomy/database.db");
+        hikariConfig.setJdbcUrl(config.getUrl()); // Use the URL from config, not hardcoded path
         hikariConfig.setMaximumPoolSize(1);
         hikariConfig.setMinimumIdle(1);
         hikariConfig.addDataSourceProperty("journal_mode", "WAL");

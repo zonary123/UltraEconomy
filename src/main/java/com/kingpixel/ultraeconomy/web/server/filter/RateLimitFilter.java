@@ -7,24 +7,15 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.util.EnumSet;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Per-IP rate limiting using the Token Bucket algorithm.
- * <p>
- * Features:
- * <ul>
- *   <li>Separate limits for API and static requests</li>
- *   <li>Auto-ban for repeat offenders</li>
- *   <li>X-Forwarded-For support (configurable)</li>
- *   <li>Periodic cleanup of stale entries to prevent memory leaks</li>
- *   <li>Returns 429 (Too Many Requests) with Retry-After header</li>
- *   <li>Returns 403 (Forbidden) for banned IPs</li>
- * </ul>
- *
- * @author Carlos Varas Alonso
+ * Per-IP rate limiting using a token bucket.
+ * The filter treats API and static assets separately, supports reverse-proxy IP extraction,
+ * and periodically removes stale buckets so abusive traffic does not grow memory usage forever.
  */
 public class RateLimitFilter implements Filter {
 
@@ -65,17 +56,13 @@ public class RateLimitFilter implements Filter {
     }
 
     String clientIp = extractClientIp(req, config.isTrustProxy());
-
-    // ─── Check ban ───
     if (handleBan(clientIp, resp)) return;
 
-    // ─── Rate limit check ───
     String path = req.getRequestURI();
     boolean isApi = path.startsWith("/api/");
 
     if (!checkRateLimit(clientIp, isApi, config, resp)) return;
 
-    // ─── Allowed — proceed ───
     chain.doFilter(request, response);
   }
 
@@ -95,7 +82,6 @@ public class RateLimitFilter implements Filter {
       return true;
     }
 
-    // Ban expired, clean up
     banned.remove(clientIp);
     violations.remove(clientIp);
     return false;
@@ -107,7 +93,7 @@ public class RateLimitFilter implements Filter {
   private boolean checkRateLimit(String clientIp, boolean isApi,
                                  WebSecurityConfig config, HttpServletResponse resp) throws IOException {
     int rateLimit = isApi ? config.getApiRateLimit() : config.getStaticRateLimit();
-    if (rateLimit <= 0) return true; // Rate limiting disabled for this type
+    if (rateLimit <= 0) return true;
 
     ConcurrentHashMap<String, TokenBucket> buckets = isApi ? apiBuckets : staticBuckets;
     int burstCapacity = isApi ? config.getApiBurstCapacity() : config.getStaticBurstCapacity();
@@ -115,13 +101,12 @@ public class RateLimitFilter implements Filter {
     TokenBucket bucket = buckets.computeIfAbsent(clientIp, k ->
       new TokenBucket(burstCapacity, rateLimit));
 
-    if (bucket.tryConsume()) return true; // Allowed
+    if (bucket.tryConsume()) return true;
 
-    // ─── Rate limit exceeded ───
     if (config.getBanThreshold() > 0) {
       int count = violations.computeIfAbsent(clientIp, k -> new AtomicInteger(0)).incrementAndGet();
       if (count >= config.getBanThreshold()) {
-        long banUntil = System.currentTimeMillis() + (long) config.getBanDurationMinutes() * 60_000L;
+        long banUntil = System.currentTimeMillis() + config.getBanDurationMinutes() * 60_000L;
         banned.put(clientIp, banUntil);
         UltraEconomy.LOGGER.warn("[WebSecurity] Auto-banned IP {} for {} minutes (exceeded {} violations)",
           clientIp, config.getBanDurationMinutes(), config.getBanThreshold());
@@ -134,9 +119,9 @@ public class RateLimitFilter implements Filter {
       }
     }
 
-    // Return 429
     int retryAfter = Math.max(1, (int) Math.ceil(1.0 / rateLimit));
-    resp.setStatus(429); // SC_TOO_MANY_REQUESTS
+    UltraEconomy.LOGGER.debug("[WebSecurity] Rate limited IP {}: {}/s exceeded (retry after {}s)", clientIp, rateLimit, retryAfter);
+    resp.setStatus(429);
     resp.setContentType(CONTENT_TYPE_JSON);
     resp.setHeader(HEADER_RETRY_AFTER, String.valueOf(retryAfter));
     resp.setHeader("X-RateLimit-Limit", String.valueOf(rateLimit));
@@ -156,34 +141,46 @@ public class RateLimitFilter implements Filter {
     banned.clear();
   }
 
-  // =============================
-  // Private Helpers
-  // =============================
-
   private WebSecurityConfig getConfig() {
     return UltraEconomy.config != null ? UltraEconomy.config.getWebSecurity() : null;
   }
 
   /**
    * Extract client IP, optionally trusting X-Forwarded-For for reverse proxy setups.
+   * The extracted IP is validated as a proper IP address to prevent header injection attacks
+   * that would allow an attacker to fake their IP and bypass rate limiting.
    */
   private String extractClientIp(HttpServletRequest req, boolean trustProxy) {
     if (trustProxy) {
       String xff = req.getHeader("X-Forwarded-For");
       if (xff != null && !xff.isBlank()) {
-        // X-Forwarded-For: client, proxy1, proxy2 → take first (leftmost = original client)
-        String clientIp = xff.split(",")[0].trim();
-        if (!clientIp.isEmpty()) {
-          return clientIp;
+        String candidate = xff.split(",")[0].trim();
+        if (isValidIp(candidate)) {
+          return candidate;
         }
+        UltraEconomy.LOGGER.debug("[WebSecurity] Ignoring invalid X-Forwarded-For value: {}", candidate);
       }
-      // Also check X-Real-IP (nginx)
       String realIp = req.getHeader("X-Real-IP");
       if (realIp != null && !realIp.isBlank()) {
-        return realIp.trim();
+        String candidate = realIp.trim();
+        if (isValidIp(candidate)) {
+          return candidate;
+        }
+        UltraEconomy.LOGGER.debug("[WebSecurity] Ignoring invalid X-Real-IP value: {}", candidate);
       }
     }
     return req.getRemoteAddr();
+  }
+
+  /** Returns true only if {@code ip} parses as a valid IPv4 or IPv6 address. */
+  private boolean isValidIp(String ip) {
+    if (ip == null || ip.isBlank()) return false;
+    try {
+      InetAddress.getByName(ip);
+      return true;
+    } catch (java.net.UnknownHostException e) {
+      return false;
+    }
   }
 
   /**
@@ -192,25 +189,17 @@ public class RateLimitFilter implements Filter {
   private void cleanup() {
     long now = System.currentTimeMillis();
 
-    // Remove stale buckets (no activity for 5 minutes)
     long staleNanoThreshold = System.nanoTime() - TimeUnit.MINUTES.toNanos(5);
     cleanupBuckets(apiBuckets, staleNanoThreshold);
     cleanupBuckets(staticBuckets, staleNanoThreshold);
 
-    // Remove expired bans
     banned.entrySet().removeIf(entry -> now >= entry.getValue());
-
-    // Remove violations for non-banned IPs
     violations.keySet().removeIf(ip -> !banned.containsKey(ip));
   }
 
   private void cleanupBuckets(ConcurrentHashMap<String, TokenBucket> buckets, long staleNanoThreshold) {
     buckets.entrySet().removeIf(entry -> entry.getValue().getLastAccessNano() < staleNanoThreshold);
   }
-
-  // =============================
-  // Token Bucket Implementation
-  // =============================
 
   /**
    * Thread-safe token bucket with configurable capacity and refill rate.
@@ -225,7 +214,7 @@ public class RateLimitFilter implements Filter {
     TokenBucket(int maxTokens, double refillRate) {
       this.maxTokens = maxTokens;
       this.refillRate = refillRate;
-      this.tokens = maxTokens; // Start full
+      this.tokens = maxTokens;
       this.lastRefillNano = System.nanoTime();
       this.lastAccessNano = System.nanoTime();
     }
@@ -252,9 +241,6 @@ public class RateLimitFilter implements Filter {
     }
   }
 
-  // =============================
-  // Registration Helper
-  // =============================
 
   /**
    * Convenience method to register this filter on a ServletContextHandler.

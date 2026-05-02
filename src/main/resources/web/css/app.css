@@ -28,7 +28,6 @@
   --ease:        cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* ===== Reset ===== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
 
@@ -46,11 +45,9 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
 img { display: block; max-width: 100%; }
 ul, ol { list-style: none; }
 
-/* ===== Layout ===== */
 .container { max-width: 1280px; margin: 0 auto; padding: 0 1.5rem; }
 .page { padding: 2rem 0 4rem; animation: fadeIn 300ms var(--ease); }
 
-/* ===== Navbar ===== */
 .nav {
   position: sticky; top: 0; z-index: 100;
   background: rgba(11, 13, 19, 0.8);
@@ -81,7 +78,6 @@ ul, ol { list-style: none; }
 .nav-icon:hover { color: var(--text); }
 .nav-icon svg { width: 22px; height: 22px; }
 
-/* ===== Cards ===== */
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -98,7 +94,6 @@ ul, ol { list-style: none; }
   cursor: pointer;
 }
 
-/* ===== Stat Cards ===== */
 .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
 .stat-card {
   background: var(--bg-card);
@@ -113,12 +108,11 @@ ul, ol { list-style: none; }
   font-size: 1.3rem; flex-shrink: 0;
 }
 .stat-icon.green  { background: rgba(16,185,129,0.12); color: var(--accent); }
-.stat-icon.blue   { background: rgba(59,130,246,0.12); color: #60a5fa; }
+.stat-icon.blue   { background: rgba(30,41,59,0.9); color: #dbeafe; }
 .stat-icon.gold   { background: rgba(251,191,36,0.12); color: var(--gold); }
 .stat-label { font-size: 0.8rem; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
 .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--text); line-height: 1.2; }
 
-/* ===== Player Cards ===== */
 .players-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -145,19 +139,17 @@ ul, ol { list-style: none; }
 .player-name { font-weight: 600; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .player-balances { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.4rem; }
 
-/* ===== Badges ===== */
 .badge {
   display: inline-flex; align-items: center; gap: 0.3rem;
   padding: 0.2rem 0.55rem; border-radius: 999px;
   font-size: 0.75rem; font-weight: 600; white-space: nowrap;
 }
-.badge-emerald { background: rgba(16,185,129,0.12); color: #6ee7b7; }
-.badge-gold    { background: rgba(251,191,36,0.12); color: #fcd34d; }
-.badge-blue    { background: rgba(59,130,246,0.12); color: #93c5fd; }
-.badge-red     { background: rgba(239,68,68,0.12); color: #fca5a5; }
+.badge-emerald { background: rgba(6,95,70,0.45); color: #ecfdf5; }
+.badge-gold    { background: rgba(120,53,15,0.45); color: #fffbeb; }
+.badge-blue    { background: rgba(30,64,175,0.45); color: #eff6ff; }
+.badge-red     { background: rgba(127,29,29,0.45); color: #fef2f2; }
 .badge-gray    { background: rgba(148,163,184,0.08); color: var(--text-sec); }
 
-/* ===== Buttons ===== */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
   padding: 0.55rem 1.25rem; border-radius: var(--radius-sm);
@@ -172,7 +164,6 @@ ul, ol { list-style: none; }
 .btn-ghost:disabled { opacity: 0.35; cursor: not-allowed; }
 .btn-sm { padding: 0.35rem 0.85rem; font-size: 0.8rem; }
 
-/* ===== Inputs ===== */
 .input-wrap {
   display: flex; align-items: center; gap: 0.75rem;
   background: var(--bg-input); border: 1px solid var(--border);
@@ -187,7 +178,6 @@ ul, ol { list-style: none; }
 }
 .input-field::placeholder { color: var(--text-muted); }
 
-/* ===== Tables ===== */
 .table-wrap {
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: var(--radius); overflow: hidden;
@@ -208,7 +198,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 .text-accent  { color: var(--accent); }
 .font-mono    { font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace; }
 
-/* ===== Select ===== */
 .select {
   appearance: none; background: var(--bg-input); border: 1px solid var(--border);
   color: var(--text); padding: 0.5rem 2rem 0.5rem 0.75rem;
@@ -220,11 +209,9 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 }
 .select:focus { border-color: var(--accent); }
 
-/* ===== Sections ===== */
 .section-title { font-size: 1.1rem; font-weight: 700; color: var(--text); margin-bottom: 1rem; }
 .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem; }
 
-/* ===== Player Detail ===== */
 .detail-grid { display: grid; grid-template-columns: 340px 1fr; gap: 1.5rem; }
 .profile-card { text-align: center; }
 .profile-card .player-avatar { width: 96px; height: 96px; margin: 0 auto 1rem; border: 2px solid var(--accent-dim); border-radius: var(--radius); }
@@ -244,7 +231,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   height: 100% !important;
 }
 
-/* Summary stats row */
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -270,7 +256,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   line-height: 1.2;
 }
 
-/* Filter pills for transaction types */
 .filter-bar {
   display: flex;
   align-items: center;
@@ -300,9 +285,8 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 .pill-success.active { background: rgba(34,197,94,0.12); color: var(--success); border-color: var(--success); }
 .pill-danger.active  { background: rgba(239,68,68,0.12); color: var(--danger); border-color: var(--danger); }
 .pill-warning.active { background: rgba(245,158,11,0.12); color: var(--warning); border-color: var(--warning); }
-.pill-blue.active    { background: rgba(59,130,246,0.12); color: #60a5fa; border-color: #60a5fa; }
+.pill-blue.active    { background: rgba(30,64,175,0.45); color: #eff6ff; border-color: #93c5fd; }
 
-/* Type indicator dots in table */
 .type-dot {
   display: inline-block;
   width: 8px;
@@ -316,7 +300,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 .type-dot-set      { background: var(--warning); box-shadow: 0 0 6px rgba(245,158,11,0.4); }
 .type-dot-transfer { background: #60a5fa; box-shadow: 0 0 6px rgba(59,130,246,0.4); }
 
-/* Empty chart state */
 .chart-empty {
   display: flex;
   align-items: center;
@@ -327,11 +310,9 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   font-size: 0.9rem;
 }
 
-/* ===== Pagination ===== */
 .pagination { display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 1rem 0; }
 .page-info { font-size: 0.85rem; color: var(--text-sec); font-weight: 500; }
 
-/* ===== Empty / Error / Loading states ===== */
 .state-box {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: 3rem 1rem; color: var(--text-muted); gap: 0.75rem;
@@ -339,7 +320,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 .state-box svg { width: 40px; height: 40px; opacity: 0.4; }
 .state-box p { font-size: 0.95rem; }
 
-/* ===== Skeleton ===== */
 .skeleton {
   background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-card-alt) 50%, var(--bg-card) 75%);
   background-size: 200% 100%;
@@ -351,13 +331,11 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 .skeleton-text { height: 1rem; width: 60%; }
 .skeleton-text-sm { height: 0.75rem; width: 40%; }
 
-/* ===== Animations ===== */
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes shimmer { to { background-position: -200% 0; } }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 .fade-in { animation: fadeIn 300ms var(--ease); }
 
-/* ===== Utilities ===== */
 .mt-1 { margin-top: 0.5rem; } .mt-2 { margin-top: 1rem; } .mt-3 { margin-top: 1.5rem; }
 .mb-1 { margin-bottom: 0.5rem; } .mb-2 { margin-bottom: 1rem; } .mb-3 { margin-bottom: 1.5rem; }
 .gap-1 { gap: 0.5rem; } .gap-2 { gap: 1rem; } .gap-3 { gap: 1.5rem; }
@@ -367,7 +345,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 .w-full { width: 100%; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ===== Responsive ===== */
 @media (max-width: 900px) {
   .detail-grid { grid-template-columns: 1fr; }
   .profile-card { order: -1; }

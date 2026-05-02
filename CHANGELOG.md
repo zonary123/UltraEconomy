@@ -1,15 +1,46 @@
 # Changelog
 
+All notable changes to this project will be documented in this file.
 
-## [1.0.1] - 09-02-2026
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-05-02
 
-### Feature plans
-- Upcoming backup system.
-- Upcoming discord webhook notifications.
-- Upcoming more detailed transaction history.
-- Upcoming Web dashboard view statistics and management.
-- 
+### Added
+- Backup system for economy data.
+- Discord webhook notifications for transactions.
+- More detailed transaction history with advanced filtering.
+- Web dashboard view with statistics and management tools.
+
+## [1.0.1] - 2026-05-02
+
+### Added
+- Cached account retrieval method to improve lookup performance.
+- Command cooldown check in PayCommand to prevent command spam.
+- Payment validation in PayCommand to prevent negative or zero transactions.
+- Enhanced transaction state tracking in MongoDBClient.
+- Improved account retrieval logic with better caching mechanisms.
+
+### Changed
+- Refactored transaction methods in ImpactorAccountMixin to use builder pattern for better maintainability.
+- Enhanced chart rendering stability and improved currency selection handling in web UI.
+- Refactored various components to improve code consistency and logging functionality.
+- Updated Gradle wrapper to version 9.3.1 and fabric-loom plugin to version 1.14.10.
+- Improved build.gradle with enhanced HASH_ID handling and GitHub Actions fallback support.
+- Streamlined connection logic in DatabaseFactory by removing redundant null checks.
+- Simplified balance management methods in BeconomyServiceMixin for cleaner code.
+- Refactored account disconnection logic with improved safety checks.
+- Optimized account saving on player quit by using cached account retrieval.
+- Enhanced MongoDBClient connection management with atomic state tracking.
+
+### Fixed
+- Fixed import statement for BlanketEconomyAPI in BeconomyServiceMixin.
+- Fixed transaction history processing in MongoDBClient to ensure proper server readiness checks.
+- Fixed transaction handling to ensure server is running before processing.
+- Improved transaction processing checks to prevent race conditions.
+- Fixed null check in account saving to prevent potential NPE.
+
 ## [1.0.0] - 2025-12-01
 
 ### Added
@@ -32,8 +63,3 @@
 - Fixed SQLite logic when player is offline.
 - Fixed issue with transaction history not processing correctly.
 
-### Feature plans
-- Upcoming backup system.
-- Upcoming discord webhook notifications.
-- Upcoming more detailed transaction history.
-- Upcoming Web dashboard view statistics and management.

@@ -1,5 +1,6 @@
 package com.kingpixel.ultraeconomy.commands.admin;
 
+import com.kingpixel.cobbleutils.api.PermissionApi;
 import com.kingpixel.cobbleutils.util.AdventureTranslator;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -13,7 +14,7 @@ public class ReloadCommand {
   public static void put(LiteralArgumentBuilder<ServerCommandSource> base) {
     base.then(
       CommandManager.literal("reload")
-        .requires(source -> source.hasPermissionLevel(2))
+        .requires(source -> PermissionApi.hasPermission(source, "ultraeconomy.admin.reload", 2))
         .executes(context -> {
           UltraEconomy.load();
           context.getSource().sendMessage(

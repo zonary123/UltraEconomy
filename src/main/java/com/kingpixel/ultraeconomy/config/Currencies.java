@@ -80,6 +80,12 @@ public class Currencies {
       }
     });
 
+    if (DEFAULT_CURRENCY == null && !CURRENCY_MAP.isEmpty()) {
+      DEFAULT_CURRENCY = CURRENCY_MAP.values().iterator().next();
+      DEFAULT_CURRENCY.setPrimary(true);
+      writeCurrency(DEFAULT_CURRENCY);
+    }
+
     Set<String> idCurrency = new HashSet<>();
     CURRENCY_MAP.values().forEach(c -> idCurrency.add(c.getId()));
     CURRENCY_IDS = idCurrency.toArray(new String[0]);

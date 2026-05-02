@@ -53,10 +53,10 @@ jobs:
             --title "Release $TAG" \
             --notes "Automated release for version $TAG"
 
-      - name: Send Discord Notifications
+      - name: Send Discord Notification with Embed and File
         run: |
           FILE=$(ls build/libs/*.jar | grep -v "sources" | head -n1)
-
+          
           # Extraer changelog
           BASE=$(echo "$TAG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
           CHANGELOG_CONTENT=$(tr -d '\r' < CHANGELOG.md | awk -v ver="$BASE" '
@@ -64,15 +64,11 @@ jobs:
             /^## \[/ && flag {flag=0}
             flag {print}
           ')
-
+          
           # Generar JSON embed correctamente escapado
           JSON_PAYLOAD=$(jq -nc --arg tag "$TAG" --arg changelog "$CHANGELOG_CONTENT" \
-            '{content: "@everyone 🎉 New Release!
-            If you want contribute, check the repository:
-            [GitHub Repository](<https://github.com/zonary123/UltraEconomy>)",
-            embeds:[{title:("Release "+$tag), description:$changelog,
-            color:3066993}]}')
-
+            '{content: "@everyone 🎉 New Release!", embeds:[{title:("Release "+$tag), description:$changelog, color:3066993}]}')
+          
           echo "Embed JSON:"
           echo "$JSON_PAYLOAD"
           
@@ -80,8 +76,22 @@ jobs:
           curl -s -X POST "$DISCORD_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             -d "$JSON_PAYLOAD"
-
+          
           # 2️⃣ Enviar después el archivo como segundo mensaje
           curl -s -X POST "$DISCORD_WEBHOOK_URL" \
             -F "file=@${FILE}"
 
+      - name: Publish to Modrinth
+        run: |
+          FILE=$(ls build/libs/*.jar | grep -v "sources" | head -n1)
+
+          # Verificar si la versión ya existe
+          EXISTS=$(curl -s "https://api.modrinth.com/v2/project/$MOD_NAME/version" | \
+            jq -r ".[] | select(.version_number==\"$MOD_VERSION\") | .version_number")
+
+          if [ -n "$EXISTS" ]; then
+            echo "La versión $MOD_VERSION ya existe en Modrinth, omitiendo publicación."
+            exit 0
+          fi
+
+          ./gradlew modrinth -PuploadFile="$FILE" -PmodrinthVersion="$MOD_VERSION"

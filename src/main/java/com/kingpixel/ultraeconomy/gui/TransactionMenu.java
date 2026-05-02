@@ -113,7 +113,7 @@ public class TransactionMenu {
     if (hasPrevPage) {
       GooeyButton prevButton = GooeyButton.builder()
         .display(new ItemStack(Items.ARROW))
-        .with(DataComponentTypes.CUSTOM_NAME, AdventureTranslator.toNative("&aPrevious Page"))
+        .with(DataComponentTypes.CUSTOM_NAME, AdventureTranslator.toNative(UltraEconomy.lang.getMenuPreviousPage()))
         .onClick(action -> open(viewer, targetUUID, targetName, page - 1))
         .build();
       template.set(5, 0, prevButton);
@@ -121,7 +121,7 @@ public class TransactionMenu {
 
     GooeyButton closeButton = GooeyButton.builder()
       .display(new ItemStack(Items.BARRIER))
-      .with(DataComponentTypes.CUSTOM_NAME, AdventureTranslator.toNative("&cClose"))
+      .with(DataComponentTypes.CUSTOM_NAME, AdventureTranslator.toNative(UltraEconomy.lang.getMenuClose()))
       .onClick(action -> UIManager.closeUI(viewer))
       .build();
     template.set(5, 4, closeButton);
@@ -129,7 +129,7 @@ public class TransactionMenu {
     if (hasNextPage) {
       GooeyButton nextButton = GooeyButton.builder()
         .display(new ItemStack(Items.ARROW))
-        .with(DataComponentTypes.CUSTOM_NAME, AdventureTranslator.toNative("&aNext Page"))
+        .with(DataComponentTypes.CUSTOM_NAME, AdventureTranslator.toNative(UltraEconomy.lang.getMenuNextPage()))
         .onClick(action -> open(viewer, targetUUID, targetName, page + 1))
         .build();
       template.set(5, 8, nextButton);

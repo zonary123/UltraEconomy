@@ -41,12 +41,19 @@ public class WithdrawCommand {
                     .executes(context -> {
                       UltraEconomy.runAsync(() -> {
                         var target = StringArgumentType.getString(context, "player");
+                        ServerCommandSource source = context.getSource();
                         if (!UltraEconomyApi.existsPlayerWithName(target)) {
-                          UltraEconomy.lang.getMessagePlayerNotFound().sendMessage(
-                            context.getSource().getPlayer(), UltraEconomy.lang.getPrefix(), false);
+                          if (source.isExecutedByPlayer() && source.getPlayer() != null) {
+                            UltraEconomy.lang.getMessagePlayerNotFound().sendMessage(
+                              source.getPlayer(), UltraEconomy.lang.getPrefix(), false);
+                          } else {
+                            source.sendError(
+                              com.kingpixel.cobbleutils.util.AdventureTranslator.toNative(
+                                UltraEconomy.lang.getMessagePlayerNotFound().getRawMessage()));
+                          }
                           return;
                         }
-                        var currency = Currencies.getCurrency(StringArgumentType.getString(context, "currency"));
+                        var currency = Currencies.getCurrency(Register.getCurrencyArgId(context, "currency"));
                         var amountStr = StringArgumentType.getString(context, "amount");
                         var playerUUID = CobbleUtilsSuggests.SUGGESTS_PLAYER_OFFLINE_AND_ONLINE.getPlayerUUIDWithName(target);
                         if (playerUUID != null) {
@@ -54,8 +61,14 @@ public class WithdrawCommand {
                           UltraEconomyApi.withdraw(playerUUID, currency.getId(), value);
                           Register.sendMessage(currency, value, playerUUID, UltraEconomy.lang.getMessageWithdraw());
                         } else {
-                          UltraEconomy.lang.getMessagePlayerNotFound().sendMessage(
-                            context.getSource().getPlayer(), UltraEconomy.lang.getPrefix(), false);
+                          if (source.isExecutedByPlayer() && source.getPlayer() != null) {
+                            UltraEconomy.lang.getMessagePlayerNotFound().sendMessage(
+                              source.getPlayer(), UltraEconomy.lang.getPrefix(), false);
+                          } else {
+                            source.sendError(
+                              com.kingpixel.cobbleutils.util.AdventureTranslator.toNative(
+                                UltraEconomy.lang.getMessagePlayerNotFound().getRawMessage()));
+                          }
                         }
                       });
                       return 1;

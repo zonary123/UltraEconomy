@@ -9,36 +9,17 @@ import java.io.IOException;
 import java.util.EnumSet;
 
 /**
- * Adds essential HTTP security headers to all responses.
- * <p>
- * Headers applied:
- * <ul>
- *   <li><b>X-Content-Type-Options: nosniff</b> — Prevents MIME type sniffing</li>
- *   <li><b>X-Frame-Options: DENY</b> — Prevents clickjacking via iframe embedding</li>
- *   <li><b>X-XSS-Protection: 0</b> — Disables legacy XSS auditor (CSP replaces it)</li>
- *   <li><b>Referrer-Policy: strict-origin-when-cross-origin</b> — Controls referrer information</li>
- *   <li><b>Content-Security-Policy</b> — Controls resource loading origins</li>
- *   <li><b>Permissions-Policy</b> — Restricts browser feature access</li>
- *   <li><b>Cache-Control</b> — Proper caching for API vs static assets</li>
- * </ul>
- *
- * @author Carlos Varas Alonso
+ * Adds security headers to every HTTP response.
+ * The filter keeps browser behavior predictable by disabling MIME sniffing, blocking
+ * clickjacking, narrowing resource origins through CSP, and setting cache policy by route.
  */
 public class SecurityHeadersFilter implements Filter {
 
   private static final String HEADER_CACHE_CONTROL = "Cache-Control";
 
   /**
-   * CSP policy for the SPA:
-   * - default-src 'self': only load from same origin by default
-   * - script-src 'self' cdn.jsdelivr.net: allow Chart.js CDN
-   * - style-src 'self' 'unsafe-inline': allow inline styles (CSS custom properties, dynamic styles)
-   * - img-src 'self' minotar.net mc-heads.net crafatar.com: Minecraft avatar services
-   * - connect-src 'self': only fetch from same origin
-   * - font-src 'self': only local fonts
-   * - object-src 'none': block plugins (Flash, Java applets)
-   * - base-uri 'self': restrict <base> tag
-   * - form-action 'self': restrict form submissions
+   * Content Security Policy for the SPA.
+     * The app only allows the CDN used for Chart.js plus the avatar hosts used by the player page.
    */
   private static final String CSP_POLICY =
     "default-src 'self'; " +
@@ -51,9 +32,7 @@ public class SecurityHeadersFilter implements Filter {
       "base-uri 'self'; " +
       "form-action 'self'";
 
-  /**
-   * Permissions policy: restrict browser APIs that this app doesn't need.
-   */
+  /** Restrict browser APIs that the web UI does not use. */
   private static final String PERMISSIONS_POLICY =
     "camera=(), microphone=(), geolocation=(), payment=(), usb=(), " +
       "magnetometer=(), gyroscope=(), accelerometer=()";
@@ -75,21 +54,16 @@ public class SecurityHeadersFilter implements Filter {
 
     HttpServletResponse resp = (HttpServletResponse) response;
 
-    // ─── Anti-sniffing / Anti-clickjacking ───
     resp.setHeader("X-Content-Type-Options", "nosniff");
     resp.setHeader("X-Frame-Options", "DENY");
     resp.setHeader("X-XSS-Protection", "0"); // Deprecated; CSP replaces it
 
-    // ─── Referrer control ───
     resp.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
 
-    // ─── Content Security Policy ───
     resp.setHeader("Content-Security-Policy", CSP_POLICY);
 
-    // ─── Permissions Policy ───
     resp.setHeader("Permissions-Policy", PERMISSIONS_POLICY);
 
-    // ─── Cache control ───
     String path = ((jakarta.servlet.http.HttpServletRequest) request).getRequestURI();
     if (path.startsWith("/api/")) {
       // API responses should not be cached by shared caches
@@ -115,9 +89,6 @@ public class SecurityHeadersFilter implements Filter {
     return UltraEconomy.config != null ? UltraEconomy.config.getWebSecurity() : null;
   }
 
-  // =============================
-  // Registration Helper
-  // =============================
 
   /**
    * Convenience method to register this filter on a ServletContextHandler.

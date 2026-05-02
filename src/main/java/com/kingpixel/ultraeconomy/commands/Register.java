@@ -1,26 +1,39 @@
 package com.kingpixel.ultraeconomy.commands;
 
 import com.kingpixel.cobbleutils.Model.messages.HiperMessage;
-import com.kingpixel.ultraeconomy.UltraEconomy;
-import com.kingpixel.ultraeconomy.commands.admin.*;
-import com.kingpixel.ultraeconomy.commands.base.BalanceCommand;
-import com.kingpixel.ultraeconomy.commands.base.BaltopCommand;
-import com.kingpixel.ultraeconomy.commands.base.PayCommand;
-import com.kingpixel.ultraeconomy.config.Currencies;
 import com.kingpixel.cobbleutils.util.AdventureTranslator;
+import com.kingpixel.cobbleutils.api.PermissionApi;
+import com.kingpixel.ultraeconomy.UltraEconomy;
+import com.kingpixel.ultraeconomy.commands.admin.BackUpCommands;
+import com.kingpixel.ultraeconomy.commands.admin.ReloadCommand;
+import com.kingpixel.ultraeconomy.commands.admin.TransactionsCommand;
+import com.kingpixel.ultraeconomy.commands.base.*;
+import com.kingpixel.ultraeconomy.config.Currencies;
 import com.kingpixel.ultraeconomy.exceptions.UnknownCurrencyException;
 import com.kingpixel.ultraeconomy.models.Currency;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.Identifier;
 
 import java.math.BigDecimal;
 import java.util.UUID;
+import java.util.function.Consumer;
+
+// Base commands (player-only)
+// Admin commands (operator-only)
 
 /**
  * @author Carlos Varas Alonso - 23/09/2025 21:29
+ * Command registration orchestrator.
+ * <p>
+ * Structure:
+ * - Base commands: Player-only commands (balance, pay, withdraw, deposit, set, reset, baltop)
+ * - Admin commands: Operator-only commands (reload, deposit <player>, withdraw <player>, set <player>, reset <player>, backup, transactions)
+ * - Help command: Displays available commands
  */
 public class Register {
   public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
@@ -33,47 +46,52 @@ public class Register {
         return 1;
       });
 
-      // Base player commands
+      // === PLAYER COMMANDS ===
       PayCommand.put(dispatcher, base);
       BalanceCommand.put(dispatcher, base);
       BaltopCommand.put(dispatcher, base);
+      WithdrawCommand.put(dispatcher, base);
+      DepositCommand.put(dispatcher, base);
+      SetCommand.put(dispatcher, base);
+      ResetCommand.put(dispatcher, base);
 
-      // Admin commands — also accessible directly under /eco for backwards compatibility
-      ReloadCommand.put(base);
-      DepositCommand.put(base);
-      WithdrawCommand.put(base);
-      SetCommand.put(base);
-      BackUpCommands.register(base);
-      TransactionsCommand.register(base);
-
-      // Admin grouping node: /eco admin <subcommand>
+      // === ADMIN GROUPING NODE: /eco admin <subcommand> ===
       var admin = CommandManager.literal("admin")
-        .requires(source -> source.hasPermissionLevel(2));
-      ReloadCommand.put(admin);
-      DepositCommand.put(admin);
-      WithdrawCommand.put(admin);
-      SetCommand.put(admin);
-      BackUpCommands.register(admin);
-      TransactionsCommand.register(admin);
+        .requires(source -> PermissionApi.hasPermission(source, "ultraeconomy.admin", 2));
+
+      // Admin commands: Registered in both contexts (backward compat + /eco admin)
+      registerAdminCommand(base, admin, ReloadCommand::put);
+      registerAdminCommand(base, admin, com.kingpixel.ultraeconomy.commands.admin.DepositCommand::put);
+      registerAdminCommand(base, admin, com.kingpixel.ultraeconomy.commands.admin.WithdrawCommand::put);
+      registerAdminCommand(base, admin, com.kingpixel.ultraeconomy.commands.admin.SetCommand::put);
+      registerAdminCommand(base, admin, com.kingpixel.ultraeconomy.commands.admin.ResetCommand::put);
+      registerAdminCommand(base, admin, BackUpCommands::register);
+      registerAdminCommand(base, admin, TransactionsCommand::register);
+
       base.then(admin);
 
-      // Help command: /eco help
+      // === HELP COMMAND ===
       base.then(CommandManager.literal("help").executes(context -> {
+        String cmdName = command;
         context.getSource().sendFeedback(() -> AdventureTranslator.toNative(
           String.join("\n",
-            UltraEconomy.lang.getPrefix() + "<#FFD700>Available commands:",
-            "<#FFDD55>  /" + command + " <#AAAAAA>— Check your balance",
-            "<#FFDD55>  /" + command + " balance <currency> [player] <#AAAAAA>— Check balance",
-            "<#FFDD55>  /" + command + " pay <currency> <amount> <player> <#AAAAAA>— Transfer money",
-            "<#FFDD55>  /" + command + " baltop <currency> [page] <#AAAAAA>— Top balances",
-            "<#FFDD55>  /" + command + " baltopmenu <currency> <#AAAAAA>— Top balances GUI",
-            "<#FF9900>Admin commands:",
-            "<#FFDD55>  /" + command + " deposit <amount> <currency> <player>",
-            "<#FFDD55>  /" + command + " withdraw <amount> <currency> <player>",
-            "<#FFDD55>  /" + command + " set <amount> <currency> <player>",
-            "<#FFDD55>  /" + command + " transactions <player> <#AAAAAA>— View history",
-            "<#FFDD55>  /" + command + " backup create|list|restore <uuid>",
-            "<#FFDD55>  /" + command + " reload <#AAAAAA>— Reload configuration"
+            UltraEconomy.lang.getPrefix() + UltraEconomy.lang.getHelpTitle(),
+            "  /" + cmdName + " " + UltraEconomy.lang.getHelpBalance(),
+            "  " + UltraEconomy.lang.getHelpBalanceWithCurrency().replace("command", cmdName),
+            "  " + UltraEconomy.lang.getHelpPay().replace("command", cmdName),
+            "  " + UltraEconomy.lang.getHelpWithdraw().replace("command", cmdName),
+            "  " + UltraEconomy.lang.getHelpDeposit().replace("command", cmdName),
+            "  " + UltraEconomy.lang.getHelpSet().replace("command", cmdName),
+            "  " + UltraEconomy.lang.getHelpReset().replace("command", cmdName),
+            "  " + UltraEconomy.lang.getHelpBaltop().replace("command", cmdName),
+            "  " + UltraEconomy.lang.getHelpBaltopmenu().replace("command", cmdName),
+            UltraEconomy.lang.getHelpAdminTitle(),
+            "  " + UltraEconomy.lang.getHelpAdminDeposit().replace("command", cmdName),
+            "  " + UltraEconomy.lang.getHelpAdminWithdraw().replace("command", cmdName),
+            "  " + UltraEconomy.lang.getHelpAdminSet().replace("command", cmdName),
+            "  " + UltraEconomy.lang.getHelpAdminTransactions().replace("command", cmdName),
+            "  " + UltraEconomy.lang.getHelpAdminBackup().replace("command", cmdName),
+            "  " + UltraEconomy.lang.getHelpAdminReload().replace("command", cmdName)
           )
         ), false);
         return 1;
@@ -81,6 +99,22 @@ public class Register {
 
       dispatcher.register(base);
     }
+  }
+
+  /**
+   * Registers an admin command in both backward-compatible and /eco admin contexts.
+   * Eliminates duplicate code.
+   *
+   * @param basePath  the command's base path (for /eco command direct access)
+   * @param adminPath the /eco admin subgroup
+   * @param registrar the command's registration function
+   */
+  private static void registerAdminCommand(
+    LiteralArgumentBuilder<ServerCommandSource> basePath,
+    LiteralArgumentBuilder<ServerCommandSource> adminPath,
+    Consumer<LiteralArgumentBuilder<ServerCommandSource>> registrar) {
+    registrar.accept(basePath);  // /eco <command>
+    registrar.accept(adminPath); // /eco admin <command>
   }
 
   public static void sendMessage(Currency currency, BigDecimal value, UUID playerUUID,
@@ -107,5 +141,17 @@ public class Register {
     }
     e.printStackTrace();
     return null;
+  }
+
+  // Supports commands where another mod may register currency as Identifier instead of String.
+  public static String getCurrencyArgId(CommandContext<ServerCommandSource> context, String argName) {
+    Object value = context.getArgument(argName, Object.class);
+    if (value instanceof String stringValue) {
+      return stringValue;
+    }
+    if (value instanceof Identifier identifierValue) {
+      return identifierValue.getPath();
+    }
+    return value == null ? "" : value.toString();
   }
 }

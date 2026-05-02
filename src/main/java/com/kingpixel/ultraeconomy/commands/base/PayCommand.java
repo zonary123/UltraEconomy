@@ -6,6 +6,7 @@ import com.kingpixel.cobbleutils.util.AdventureTranslator;
 import com.kingpixel.cobbleutils.util.PlayerUtils;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.api.UltraEconomyApi;
+import com.kingpixel.ultraeconomy.commands.Register;
 import com.kingpixel.ultraeconomy.config.Currencies;
 import com.kingpixel.ultraeconomy.database.DatabaseFactory;
 import com.kingpixel.ultraeconomy.models.Currency;
@@ -36,7 +37,7 @@ public class PayCommand {
       .requires(source -> PermissionApi.hasPermission(
         source,
         "ultraeconomy.command.pay",
-        2
+        0
       ))
       .then(
         CommandManager.argument("currency", StringArgumentType.string())
@@ -69,7 +70,7 @@ public class PayCommand {
                         executor, UltraEconomy.lang.getPrefix(), false);
                       return 0;
                     }
-                    var currencyId = StringArgumentType.getString(context, "currency");
+                    var currencyId = Register.getCurrencyArgId(context, "currency");
                     var amount = BigDecimal.valueOf(FloatArgumentType.getFloat(context, "amount"));
                     run(executor, target, currencyId, amount, context);
                     return 1;
@@ -83,7 +84,7 @@ public class PayCommand {
     UltraEconomy.runAsync(() -> {
       Currency currency = Currencies.getCurrency(currencyId);
 
-      // If ammount is negative or zero
+      // Validate amount is positive
       if (amount.compareTo(BigDecimal.ZERO) <= 0) {
         UltraEconomy.lang.getMessageInvalidAmount().sendMessage(
           executor,

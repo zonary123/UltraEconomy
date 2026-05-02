@@ -1,5 +1,6 @@
 package com.kingpixel.ultraeconomy.commands.admin;
 
+import com.kingpixel.cobbleutils.api.PermissionApi;
 import com.kingpixel.cobbleutils.util.AdventureTranslator;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.database.DatabaseFactory;
@@ -23,7 +24,7 @@ public class BackUpCommands {
   public static void register(LiteralArgumentBuilder<ServerCommandSource> base) {
     base.then(
       CommandManager.literal("backup")
-        .requires(source -> source.hasPermissionLevel(2))
+        .requires(source -> PermissionApi.hasPermission(source, "ultraeconomy.admin.backup", 2))
         .then(createBackUp())
         .then(restoreBackUp())
         .then(listBackUps())
@@ -78,12 +79,12 @@ public class BackUpCommands {
             return;
           }
           source.sendMessage(AdventureTranslator.toNative(
-            "&e--- Backups (" + backups.size() + ") ---"));
+            UltraEconomy.lang.getPrefix() + "Backups (" + backups.size() + "):"));
           for (BackupInfo info : backups) {
             source.sendMessage(AdventureTranslator.toNative(
-              "&7[&f" + info.getFormattedDate() + "&7] &eUUID: &f" + info.getBackupUUID()
-                + " &7| &aAccounts: &f" + info.getAccountCount()
-                + " &7| &bTransactions: &f" + info.getTransactionCount()
+              "  " + info.getFormattedDate() + " | UUID: " + info.getBackupUUID()
+                + " | Accounts: " + info.getAccountCount()
+                + " | Transactions: " + info.getTransactionCount()
             ));
           }
         });
