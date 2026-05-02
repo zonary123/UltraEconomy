@@ -1,5 +1,6 @@
 package com.kingpixel.ultraeconomy;
 
+import com.kingpixel.cobbleutils.CobbleUtils;
 import com.kingpixel.cobbleutils.util.UtilsLogger;
 import com.kingpixel.cobbleutils.util.async.AsyncContext;
 import com.kingpixel.cobbleutils.util.async.UtilsAsync;
@@ -19,13 +20,14 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.server.MinecraftServer;
 import org.apache.logging.log4j.Logger;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 public class UltraEconomy implements ModInitializer {
   public static final String MOD_ID = "ultraeconomy";
   private static final String MOD_NAME = "UltraEconomy";
-  public static final String PATH = "/config/ultraeconomy";
   public static final Logger LOGGER = UtilsLogger.getLogger(MOD_NAME);
   private static final WebModule webModule = new WebModule();
   public static Config config = new Config();
@@ -40,9 +42,9 @@ public class UltraEconomy implements ModInitializer {
   @Override
   public void onInitialize() {
     try {
-      java.nio.file.Files.createDirectories(java.nio.file.Path.of("." + PATH));
+      Files.createDirectories(getPath());
     } catch (java.io.IOException e) {
-      LOGGER.error("Failed to create config directory: {}", PATH, e);
+      LOGGER.error("Failed to create config directory: {}", getPath(), e);
     }
     load();
     events();
@@ -122,6 +124,10 @@ public class UltraEconomy implements ModInitializer {
       () -> DatabaseFactory.INSTANCE.createBackUp(),
       1, 1, TimeUnit.HOURS
     );
+  }
+
+  public static Path getPath() {
+    return CobbleUtils.getPath().resolve(MOD_ID);
   }
 
   public static CompletableFuture<Void> runAsync(Runnable task) {

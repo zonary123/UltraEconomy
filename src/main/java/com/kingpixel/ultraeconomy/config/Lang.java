@@ -4,7 +4,6 @@ import com.kingpixel.cobbleutils.Model.messages.HiperMessage;
 import com.kingpixel.cobbleutils.Model.messages.HiperMessageBuilder;
 import com.kingpixel.cobbleutils.Model.messages.MessageType;
 import com.kingpixel.cobbleutils.util.UtilsFile;
-import com.kingpixel.cobbleutils.util.Utils;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.gui.BalTopMenu;
 import lombok.Data;
@@ -18,7 +17,7 @@ import java.util.List;
  */
 @Data
 public class Lang {
-  private static final String DIR = UltraEconomy.PATH + "/lang/";
+  private static final String LANG_DIR = "lang";
   private String prefix;
 
   // Mensajes de balance
@@ -166,7 +165,7 @@ public class Lang {
 
   public void init() {
     String filename = UltraEconomy.config.getLang() + ".json";
-    Path dirPath = Utils.getAbsolutePath(DIR).toPath();
+    Path dirPath = UltraEconomy.getPath().resolve(LANG_DIR);
     Path filePath = dirPath.resolve(filename);
     try {
       java.nio.file.Files.createDirectories(dirPath);

@@ -1,6 +1,5 @@
 package com.kingpixel.ultraeconomy.config;
 
-import com.kingpixel.cobbleutils.util.Utils;
 import com.kingpixel.cobbleutils.util.UtilsFile;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.models.Currency;
@@ -15,14 +14,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author Carlos Varas Alonso - 23/09/2025 21:37
  */
 public class Currencies {
-  private static final String DIR = UltraEconomy.PATH + "/currencys/";
+  private static final String CURRENCIES_DIR = "currencys";
   private static final Map<String, Currency> CURRENCY_MAP = new ConcurrentHashMap<>();
   public static String[] CURRENCY_IDS;
   public static Currency DEFAULT_CURRENCY;
 
   public static void init() {
     CURRENCY_MAP.clear();
-    Path dirPath = Utils.getAbsolutePath(DIR).toPath();
+    Path dirPath = UltraEconomy.getPath().resolve(CURRENCIES_DIR);
     try {
       Files.createDirectories(dirPath);
     } catch (IOException e) {
@@ -96,7 +95,7 @@ public class Currencies {
   }
 
   private static void writeCurrency(Currency currency) {
-    Path filePath = Utils.getAbsolutePath(DIR).toPath().resolve(currency.getId() + ".json");
+    Path filePath = UltraEconomy.getPath().resolve(CURRENCIES_DIR).resolve(currency.getId() + ".json");
     UtilsFile.writeAsync(filePath, currency);
   }
 

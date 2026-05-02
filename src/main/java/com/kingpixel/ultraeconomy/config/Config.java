@@ -3,7 +3,6 @@ package com.kingpixel.ultraeconomy.config;
 import com.kingpixel.cobbleutils.Model.DataBaseConfig;
 import com.kingpixel.cobbleutils.Model.DataBaseType;
 import com.kingpixel.cobbleutils.Model.DurationValue;
-import com.kingpixel.cobbleutils.util.Utils;
 import com.kingpixel.cobbleutils.util.UtilsFile;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.models.MigrationConfig;
@@ -71,7 +70,7 @@ public class Config {
   }
 
   public void init() {
-    Path filePath = Utils.getAbsolutePath(UltraEconomy.PATH).toPath().resolve(FILE_NAME);
+    Path filePath = UltraEconomy.getPath().resolve(FILE_NAME);
     try {
       UltraEconomy.config = UtilsFile.readOrCreate(filePath, Config.class, Config::new);
       UtilsFile.write(filePath, UltraEconomy.config);
@@ -83,7 +82,7 @@ public class Config {
   }
 
   public void writeConfig() {
-    Path filePath = Utils.getAbsolutePath(UltraEconomy.PATH).toPath().resolve(FILE_NAME);
+    Path filePath = UltraEconomy.getPath().resolve(FILE_NAME);
     try {
       UtilsFile.write(filePath, this);
     } catch (IOException e) {

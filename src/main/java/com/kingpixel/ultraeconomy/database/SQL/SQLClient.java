@@ -285,7 +285,7 @@ public class SQLClient extends DatabaseClient {
   public CompletableFuture<?> createBackUp() {
     return UltraEconomy.runAsync(() -> {
       UUID backupUUID = UUID.randomUUID();
-      Path backupDir = Path.of(UltraEconomy.PATH, "backups", "sql");
+      Path backupDir = UltraEconomy.getPath().resolve("backups").resolve("sql");
       try {
         Files.createDirectories(backupDir);
 
@@ -335,7 +335,7 @@ public class SQLClient extends DatabaseClient {
   @Override
   public void loadBackUp(UUID backupUUID) {
     UltraEconomy.runAsync(() -> {
-      Path backupFile = Path.of(UltraEconomy.PATH, "backups", "sql", backupUUID + ".json");
+      Path backupFile = UltraEconomy.getPath().resolve("backups").resolve("sql").resolve(backupUUID + ".json");
       if (!Files.exists(backupFile)) {
         UltraEconomy.LOGGER.warn("Backup file not found: {}", backupUUID);
         return;
@@ -402,7 +402,7 @@ public class SQLClient extends DatabaseClient {
   @Override
   protected void cleanOldBackUps() {
     try {
-      Path backupDir = Path.of(UltraEconomy.PATH, "backups", "sql");
+      Path backupDir = UltraEconomy.getPath().resolve("backups").resolve("sql");
       if (!Files.exists(backupDir)) return;
 
       long retentionMillis = UltraEconomy.config.getRetentionBackUps().toMillis();
@@ -427,7 +427,7 @@ public class SQLClient extends DatabaseClient {
   @Override
   public List<BackupInfo> getBackups() {
     List<BackupInfo> backups = new ArrayList<>();
-    Path backupDir = Path.of(UltraEconomy.PATH, "backups", "sql");
+    Path backupDir = UltraEconomy.getPath().resolve("backups").resolve("sql");
     if (!Files.exists(backupDir)) return backups;
 
     com.google.gson.Gson gson = new com.google.gson.Gson();
