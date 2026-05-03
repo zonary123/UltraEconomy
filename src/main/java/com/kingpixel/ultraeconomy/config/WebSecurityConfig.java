@@ -72,6 +72,13 @@ public class WebSecurityConfig {
   private String apiToken;
 
   /**
+   * Port where the web server will listen.
+   * Make sure this port is not in use and is accessible from your network.
+   * Default: 8080
+   */
+  private int port;
+
+  /**
    * Sensible defaults for the built-in web UI and API.
    */
   public WebSecurityConfig() {
@@ -86,6 +93,7 @@ public class WebSecurityConfig {
     idleTimeoutSeconds = 30;
     maxRequestBodyBytes = 8192;
     apiToken = ""; // Empty = disabled; set a UUID or random string for production
+    port = 8080;
   }
 }
 

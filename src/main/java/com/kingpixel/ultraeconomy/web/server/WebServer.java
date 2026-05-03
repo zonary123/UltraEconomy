@@ -60,7 +60,7 @@ public class WebServer {
 
       server.setHandler(context);
       server.start();
-      UltraEconomy.LOGGER.info("[Web] Server started on port {} with security filters enabled", port);
+      UltraEconomy.LOGGER.info("[Web] Server started at http://localhost:{} with security filters enabled", port);
     } catch (Exception e) {
       UltraEconomy.LOGGER.error("[Web] Failed to start web server on port {}", port, e);
     }

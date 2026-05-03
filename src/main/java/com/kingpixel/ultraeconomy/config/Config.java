@@ -19,8 +19,6 @@ import java.util.List;
 public class Config {
   private static final String FILE_NAME = "config.json";
   private boolean debug;
-  private boolean web;
-  private int webPort;
   private boolean notifications;
   private boolean queueMessages;
   private DurationValue commandCooldown;
@@ -45,12 +43,12 @@ public class Config {
   /**
    * Web security configuration: rate limiting, auto-ban, security headers.
    */
+  private boolean web;
   private WebSecurityConfig webSecurity;
 
   public Config() {
     debug = false;
     web = false;
-    webPort = 8080;
     notifications = true;
     queueMessages = false;
     commandCooldown = DurationValue.parse("500ms");

@@ -9,7 +9,10 @@ public class WebModule {
 
   public synchronized void start() {
     if (started) return;
-    webServer = new WebServer(UltraEconomy.config.getWebPort());
+    int port = UltraEconomy.config.getWebSecurity() != null
+      ? UltraEconomy.config.getWebSecurity().getPort()
+      : 8080;
+    webServer = new WebServer(port);
     webServer.start();
     started = true;
   }
