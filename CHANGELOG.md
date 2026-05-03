@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - More detailed transaction history with advanced filtering.
 - Web dashboard view with statistics and management tools.
 
+### Changed
+- Refactored economy mutation command registration to separate player self commands from admin console commands.
+
+### Fixed
+- Fixed ambiguous command registration for deposit, withdraw, set, and reset commands.
+- Fixed admin deposit, withdraw, set, and reset commands so they can be executed from the server console under `/eco admin`.
+- Fixed console-safe feedback for economy command validation errors.
+
 ## [1.0.1] - 2026-05-02
 
 ### Added

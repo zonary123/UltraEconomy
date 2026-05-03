@@ -23,9 +23,6 @@ import java.math.BigDecimal;
 import java.util.UUID;
 import java.util.function.Consumer;
 
-// Base commands (player-only)
-// Admin commands (operator-only)
-
 /**
  * @author Carlos Varas Alonso - 23/09/2025 21:29
  * Command registration orchestrator.
@@ -36,6 +33,10 @@ import java.util.function.Consumer;
  * - Help command: Displays available commands
  */
 public class Register {
+  private Register() {
+    /* Utility class */
+  }
+
   public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
     for (String command : UltraEconomy.config.getCommands()) {
       var base = CommandManager.literal(command);
@@ -46,7 +47,6 @@ public class Register {
         return 1;
       });
 
-      // === PLAYER COMMANDS ===
       PayCommand.put(dispatcher, base);
       BalanceCommand.put(dispatcher, base);
       BaltopCommand.put(dispatcher, base);
@@ -55,22 +55,19 @@ public class Register {
       SetCommand.put(dispatcher, base);
       ResetCommand.put(dispatcher, base);
 
-      // === ADMIN GROUPING NODE: /eco admin <subcommand> ===
       var admin = CommandManager.literal("admin")
         .requires(source -> PermissionApi.hasPermission(source, "ultraeconomy.admin", 2));
 
-      // Admin commands: Registered in both contexts (backward compat + /eco admin)
       registerAdminCommand(base, admin, ReloadCommand::put);
-      registerAdminCommand(base, admin, com.kingpixel.ultraeconomy.commands.admin.DepositCommand::put);
-      registerAdminCommand(base, admin, com.kingpixel.ultraeconomy.commands.admin.WithdrawCommand::put);
-      registerAdminCommand(base, admin, com.kingpixel.ultraeconomy.commands.admin.SetCommand::put);
-      registerAdminCommand(base, admin, com.kingpixel.ultraeconomy.commands.admin.ResetCommand::put);
+      com.kingpixel.ultraeconomy.commands.admin.DepositCommand.put(admin);
+      com.kingpixel.ultraeconomy.commands.admin.WithdrawCommand.put(admin);
+      com.kingpixel.ultraeconomy.commands.admin.SetCommand.put(admin);
+      com.kingpixel.ultraeconomy.commands.admin.ResetCommand.put(admin);
       registerAdminCommand(base, admin, BackUpCommands::register);
       registerAdminCommand(base, admin, TransactionsCommand::register);
 
       base.then(admin);
 
-      // === HELP COMMAND ===
       base.then(CommandManager.literal("help").executes(context -> {
         String cmdName = command;
         context.getSource().sendFeedback(() -> AdventureTranslator.toNative(
