@@ -33,7 +33,7 @@ public class BalanceCommand {
 
   private static LiteralArgumentBuilder<ServerCommandSource> get() {
     return CommandManager.literal("balance")
-      .requires(source -> PermissionApi.hasPermission(source, "ultraeconomy.command.balance", 0))
+      .requires(source -> PermissionApi.hasPermission(source, "ultraeconomy.command.balance", 2))
       .executes(context -> {
         ServerPlayerEntity player = context.getSource().getPlayer();
         run(player == null ? null : player.getUuid(), context, Currencies.DEFAULT_CURRENCY.getId());

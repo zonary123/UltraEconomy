@@ -39,7 +39,7 @@ public class WithdrawCommand {
 
   private static LiteralArgumentBuilder<ServerCommandSource> get() {
     return CommandManager.literal("withdraw")
-      .requires(source -> PermissionApi.hasPermission(source, PERMISSION_NODE, 0))
+      .requires(source -> PermissionApi.hasPermission(source, PERMISSION_NODE, 2))
       .then(
         CommandManager.argument(BaseCommandSupport.KEY_AMOUNT, FloatArgumentType.floatArg())
           .suggests(CommandBuilders.AMOUNT_SUGGESTIONS)
@@ -75,6 +75,7 @@ public class WithdrawCommand {
                     var executor = context.getSource().getPlayer();
                     var targetUUID = BaseCommandSupport.resolveTargetAllowConsole(context);
                     if (targetUUID == null) return 0;
+                    if (!BaseCommandSupport.canModifyTarget(context, targetUUID, PERMISSION_NODE)) return 0;
 
                     if (executor != null && PlayerUtils.hasCooldownCommand(executor, PERMISSION_NODE, UltraEconomy.config.getCommandCooldown()))
                       return 0;

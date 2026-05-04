@@ -7,8 +7,8 @@ import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.api.UltraEconomyApi;
 import com.kingpixel.ultraeconomy.commands.CommandBuilders;
 import com.kingpixel.ultraeconomy.commands.CommandFeedback;
-import com.kingpixel.ultraeconomy.config.Currencies;
 import com.kingpixel.ultraeconomy.commands.Register;
+import com.kingpixel.ultraeconomy.config.Currencies;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -39,7 +39,7 @@ public class SetCommand {
 
   private static LiteralArgumentBuilder<ServerCommandSource> get() {
     return CommandManager.literal("set")
-      .requires(source -> PermissionApi.hasPermission(source, PERMISSION_NODE, 0))
+      .requires(source -> PermissionApi.hasPermission(source, PERMISSION_NODE, 2))
       .then(
         CommandManager.argument(BaseCommandSupport.KEY_AMOUNT, FloatArgumentType.floatArg())
           .suggests(CommandBuilders.BALANCE_SUGGESTIONS)
@@ -75,6 +75,7 @@ public class SetCommand {
                     var executor = context.getSource().getPlayer();
                     var targetUUID = BaseCommandSupport.resolveTargetAllowConsole(context);
                     if (targetUUID == null) return 0;
+                    if (!BaseCommandSupport.canModifyTarget(context, targetUUID, PERMISSION_NODE)) return 0;
 
                     if (executor != null && PlayerUtils.hasCooldownCommand(executor, PERMISSION_NODE, UltraEconomy.config.getCommandCooldown()))
                       return 0;

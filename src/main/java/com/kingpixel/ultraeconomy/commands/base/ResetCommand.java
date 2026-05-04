@@ -39,11 +39,11 @@ public class ResetCommand {
 
   private static LiteralArgumentBuilder<ServerCommandSource> get() {
     return CommandManager.literal("reset")
-      .requires(source -> PermissionApi.hasPermission(source, PERMISSION_NODE, 0))
+      .requires(source -> PermissionApi.hasPermission(source, PERMISSION_NODE, 2))
       .executes(context -> {
         var executor = context.getSource().getPlayer();
         if (executor == null) {
-          CommandFeedback.sendError(context.getSource(), 
+          CommandFeedback.sendError(context.getSource(),
             "Must specify currency and player when executing from console. Usage: /reset <currency> <player>");
           return 0;
         }
@@ -56,7 +56,7 @@ public class ResetCommand {
           .executes(context -> {
             var executor = context.getSource().getPlayer();
             if (executor == null) {
-              CommandFeedback.sendError(context.getSource(), 
+              CommandFeedback.sendError(context.getSource(),
                 "Must specify a player when executing from console. Usage: /reset <currency> <player>");
               return 0;
             }
@@ -72,10 +72,11 @@ public class ResetCommand {
                 var executor = context.getSource().getPlayer();
                 var targetUUID = BaseCommandSupport.resolveTargetAllowConsole(context);
                 if (targetUUID == null) return 0;
-                
+                if (!BaseCommandSupport.canModifyTarget(context, targetUUID, PERMISSION_NODE)) return 0;
+
                 if (executor != null && PlayerUtils.hasCooldownCommand(executor, PERMISSION_NODE, UltraEconomy.config.getCommandCooldown()))
                   return 0;
-                
+
                 run(targetUUID, context, Register.getCurrencyArgId(context, BaseCommandSupport.KEY_CURRENCY));
                 return 1;
               })

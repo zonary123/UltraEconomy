@@ -37,7 +37,7 @@ public class PayCommand {
       .requires(source -> PermissionApi.hasPermission(
         source,
         "ultraeconomy.command.pay",
-        0
+        2
       ))
       .then(
         CommandManager.argument("currency", StringArgumentType.string())

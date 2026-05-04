@@ -1,5 +1,6 @@
 package com.kingpixel.ultraeconomy.commands.base;
 
+import com.kingpixel.cobbleutils.api.PermissionApi;
 import com.kingpixel.cobbleutils.command.suggests.CobbleUtilsSuggests;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.api.UltraEconomyApi;
@@ -44,6 +45,22 @@ final class BaseCommandSupport {
       }
       return executor.getUuid();
     }
+  }
+
+  static boolean canModifyTarget(CommandContext<ServerCommandSource> context, UUID targetUUID, String basePermissionNode) {
+    var source = context.getSource();
+    String otherPermissionNode = basePermissionNode + ".other";
+    if (PermissionApi.hasPermission(source, otherPermissionNode, 2)) {
+      return true;
+    }
+
+    var executor = source.getPlayer();
+    if (executor != null && executor.getUuid().equals(targetUUID)) {
+      return true;
+    }
+
+    CommandFeedback.sendError(source, "You do not have permission to modify other players.");
+    return false;
   }
 }
 

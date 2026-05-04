@@ -35,7 +35,7 @@ public class BaltopCommand {
 
   private static LiteralArgumentBuilder<ServerCommandSource> getBalTopMenu() {
     return CommandManager.literal("baltopmenu")
-      .requires(source -> PermissionApi.hasPermission(source, "ultraeconomy.command.baltopmenu", 0))
+      .requires(source -> PermissionApi.hasPermission(source, "ultraeconomy.command.baltopmenu", 2))
       .then(
         CommandManager.argument(CURRENCY_ARG, StringArgumentType.string())
           .suggests((context, builder) -> {
