@@ -2,27 +2,20 @@ package com.kingpixel.ultraeconomy.database;
 
 import com.kingpixel.cobbleutils.CobbleUtils;
 import com.kingpixel.cobbleutils.Model.DataBaseConfig;
+import com.kingpixel.cobbleutils.util.mongodb.MongoDBManager;
+import com.kingpixel.cobbleutils.util.mongodb.MongoDBService;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.config.Currencies;
 import com.kingpixel.ultraeconomy.models.Account;
 import com.kingpixel.ultraeconomy.models.BackupInfo;
 import com.kingpixel.ultraeconomy.models.Currency;
 import com.kingpixel.ultraeconomy.models.Transaction;
-import com.mongodb.ConnectionString;
-import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoNamespace;
-import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoDatabase;
-import com.mongodb.client.model.Filters;
-import com.mongodb.client.model.RenameCollectionOptions;
-import com.mongodb.client.model.ReplaceOptions;
-import com.mongodb.client.model.Sorts;
-import com.mongodb.client.model.Updates;
+import com.mongodb.client.model.*;
+import net.minecraft.entity.Entity;
 import net.minecraft.server.network.ServerPlayerEntity;
 import org.bson.Document;
-import org.bson.UuidRepresentation;
 import org.bson.types.Decimal128;
 
 import java.math.BigDecimal;
@@ -58,13 +51,10 @@ public class MongoDBClient extends DatabaseClient {
    */
   private final AtomicLong sessionId = new AtomicLong(0);
 
-  private MongoDatabase database;
-  private MongoClient mongoClient;
+
   private MongoCollection<Document> accountsCollection;
   private MongoCollection<Document> transactionsCollection;
   private MongoCollection<Document> backupsCollection;
-
-  enum State {DISCONNECTED, CONNECTING, CONNECTED, DISCONNECTING}
 
   private volatile boolean runningTransactions = false;
 
@@ -78,33 +68,23 @@ public class MongoDBClient extends DatabaseClient {
     shuttingDown.set(false);
 
     try {
-      mongoClient = MongoClients.create(
-        MongoClientSettings.builder()
-          .applyConnectionString(new ConnectionString(config.getUrl()))
-          .uuidRepresentation(UuidRepresentation.STANDARD)
-          .applicationName("UltraEconomy-MongoDB")
-          .build()
-      );
 
-      database = mongoClient.getDatabase(config.getDatabase());
-
-      accountsCollection = database.getCollection(ACCOUNTS_COLLECTION);
-      transactionsCollection = database.getCollection(TRANSACTIONS_COLLECTION);
-      backupsCollection = database.getCollection(BACKUPS_COLLECTION);
+      accountsCollection = getManager().getCollection(getDatabase(), ACCOUNTS_COLLECTION);
+      transactionsCollection = getManager().getCollection(getDatabase(), TRANSACTIONS_COLLECTION);
+      backupsCollection = getManager().getCollection(getDatabase(), BACKUPS_COLLECTION);
 
       ensureIndexes();
 
       runningTransactions = true;
       connected.set(true);
 
-      // Capture the current session so the scheduled task can detect reconnects/reloads and stop.
       long mySession = sessionId.incrementAndGet();
       UltraEconomy.getAsyncContext().scheduleAtFixedRate(
         () -> {
-          if (sessionId.get() != mySession) return; // Stale task from a previous session
+          if (sessionId.get() != mySession) return;
           safeCheckAndApplyTransactions();
         },
-        0, 2, TimeUnit.SECONDS
+        0, 5, TimeUnit.SECONDS
       );
 
       UltraEconomy.LOGGER.info("Connected to MongoDB");
@@ -113,6 +93,14 @@ public class MongoDBClient extends DatabaseClient {
       connected.set(false);
       UltraEconomy.LOGGER.error("Could not connect to MongoDB", e);
     }
+  }
+
+  private MongoDBManager getManager() {
+    return MongoDBService.getOrCreateManager(UltraEconomy.config.getDatabase());
+  }
+
+  private String getDatabase() {
+    return UltraEconomy.config.getDatabase().getDatabase();
   }
 
   private void safeCheckAndApplyTransactions() {
@@ -166,19 +154,9 @@ public class MongoDBClient extends DatabaseClient {
     if (!connected.get()) return;
     runningTransactions = false;
     shuttingDown.set(true);
-    // Invalidate the session so any in-flight scheduled task exits at its next iteration
+
     sessionId.incrementAndGet();
     connected.set(false);
-
-    if (mongoClient != null) {
-      mongoClient.close();
-      mongoClient = null;
-    }
-
-    database = null;
-    accountsCollection = null;
-    transactionsCollection = null;
-    backupsCollection = null;
 
     UltraEconomy.LOGGER.info("Disconnected from MongoDB safely");
   }
@@ -191,7 +169,7 @@ public class MongoDBClient extends DatabaseClient {
 
   @Override
   public boolean isConnected() {
-    return mongoClient != null;
+    return getManager().isConnected();
   }
 
   @Override
@@ -338,8 +316,15 @@ public class MongoDBClient extends DatabaseClient {
   }
 
   @Override
-  public List<Transaction> getTransactions(UUID uuid, int limit) {
-    var filter = Filters.eq(FIELD_ACCOUNT_UUID, uuid.toString());
+  public List<Transaction> getTransactions(
+    UUID uuid,
+    int limit
+  ) {
+    var filter = Filters.and(
+      Filters.eq(FIELD_ACCOUNT_UUID, uuid.toString()),
+      Filters.gte(FIELD_AMOUNT, new Decimal128(BigDecimal.ONE))
+    );
+
     return transactionsCollection.find(filter)
       .sort(Sorts.descending("timestamp"))
       .limit(limit)
@@ -383,22 +368,22 @@ public class MongoDBClient extends DatabaseClient {
         String accTmp = "accounts_restore_tmp";
         String txTmp = "transactions_restore_tmp";
 
-        database.getCollection(accTmp).drop();
-        database.getCollection(txTmp).drop();
+        getManager().getCollection(getDatabase(), accTmp).drop();
+        getManager().getCollection(getDatabase(), txTmp).drop();
 
-        MongoCollection<Document> tmpAccounts = database.getCollection(accTmp);
-        MongoCollection<Document> tmpTx = database.getCollection(txTmp);
+        MongoCollection<Document> tmpAccounts = getManager().getCollection(getDatabase(), accTmp);
+        MongoCollection<Document> tmpTx = getManager().getCollection(getDatabase(), txTmp);
 
         tmpAccounts.insertMany(accounts);
         tmpTx.insertMany(transactions);
 
         tmpAccounts.renameCollection(
-          new MongoNamespace(database.getName(), ACCOUNTS_COLLECTION),
+          new MongoNamespace(getDatabase(), ACCOUNTS_COLLECTION),
           new RenameCollectionOptions().dropTarget(true)
         );
 
         tmpTx.renameCollection(
-          new MongoNamespace(database.getName(), TRANSACTIONS_COLLECTION),
+          new MongoNamespace(getDatabase(), TRANSACTIONS_COLLECTION),
           new RenameCollectionOptions().dropTarget(true)
         );
 
@@ -429,17 +414,12 @@ public class MongoDBClient extends DatabaseClient {
 
     var players = UltraEconomy.server.getPlayerManager().getPlayerList();
     List<String> uuids = players.stream()
-      .map(p -> p.getUuidAsString())
+      .map(Entity::getUuidAsString)
       .toList();
 
     if (uuids.isEmpty()) return;
 
     try {
-      // Fetch pending transactions in a batch (read-only — no side effects yet).
-      // We apply the balance change to the account FIRST, persist it, and only THEN
-      // do a conditional mark-as-processed update. This order ensures that a server
-      // crash between persist and mark-processed causes the tx to be retried (safe),
-      // rather than marking processed before the money lands (money lost).
       List<Document> pending = transactionsCollection.find(
         Filters.and(
           Filters.eq(FIELD_PROCESSED, false),

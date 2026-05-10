@@ -1,6 +1,6 @@
 package com.kingpixel.ultraeconomy.web.server.api;
 
-import com.kingpixel.cobbleutils.util.Utils;
+import com.kingpixel.cobbleutils.util.UtilsFile;
 import com.kingpixel.ultraeconomy.database.DatabaseFactory;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
@@ -20,7 +20,7 @@ public class PlayersApiServlet extends HttpServlet {
     resp.setStatus(HttpServletResponse.SC_OK);
     int page = parseInt(req.getParameter("page"), 1, 1, Integer.MAX_VALUE);
     var accounts = DatabaseFactory.INSTANCE.getAccounts(50, page);
-    var json = Utils.newWithoutSpacingGson().toJson(accounts);
+    var json = UtilsFile.getGson().toJson(accounts);
     resp.getWriter().write(json);
   }
 

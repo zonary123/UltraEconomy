@@ -1,6 +1,6 @@
 package com.kingpixel.ultraeconomy.web.server.api;
 
-import com.kingpixel.cobbleutils.util.Utils;
+import com.kingpixel.cobbleutils.util.UtilsFile;
 import com.kingpixel.ultraeconomy.database.DatabaseFactory;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
@@ -45,7 +45,7 @@ public class PlayerApiServlet extends HttpServlet {
       return;
     }
 
-    String json = Utils.newWithoutSpacingGson().toJson(account);
+    String json = UtilsFile.getGson().toJson(account);
     resp.setStatus(HttpServletResponse.SC_OK);
     resp.getWriter().write(json);
   }

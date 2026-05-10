@@ -16,6 +16,7 @@ import net.minecraft.server.network.ServerPlayerEntity;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author Carlos Varas Alonso - 27/09/2025 17:06
@@ -44,13 +45,10 @@ public class BalTopMenu {
     UltraEconomy.runAsync(() -> {
       ChestTemplate template = ChestTemplate.builder(rows).build();
 
-      // Obtenemos la lista directamente, ya viene con +1 internamente
       List<Account> accounts = DatabaseFactory.INSTANCE.getTopBalances(currency, page, playersPerPage);
 
-      // Si la lista es mayor que playersPerPage, hay siguiente página
       boolean hasNextPage = accounts.size() > playersPerPage;
 
-      // Mostramos solo hasta playersPerPage
       List<Account> accountsPage = accounts.subList(0, Math.min(playersPerPage, accounts.size()));
 
       List<GooeyButton> buttons = new ArrayList<>();
@@ -59,17 +57,17 @@ public class BalTopMenu {
       }
       rectangle.apply(template, buttons);
 
-      // Botón de página anterior
       if (page > 1) {
-        prevPageItem.applyTemplate(template, prevPageItem.getButton(action -> open(player, page - 1, currency)));
+        prevPageItem.applyTemplate(template, prevPageItem.getButton(action -> open(player, page - 1, currency), 1, TimeUnit.SECONDS,
+          1));
       }
 
-      // Botón de cerrar
-      closeItem.applyTemplate(template, closeItem.getButton(action -> UIManager.closeUI(player)));
+      closeItem.applyTemplate(template, closeItem.getButton(action -> UIManager.closeUI(player), 1, TimeUnit.SECONDS,
+        1));
 
-      // Botón de siguiente página si hay más
       if (hasNextPage) {
-        nextPageItem.applyTemplate(template, nextPageItem.getButton(action -> open(player, page + 1, currency)));
+        nextPageItem.applyTemplate(template, nextPageItem.getButton(action -> open(player, page + 1, currency), 1, TimeUnit.SECONDS,
+          1));
       }
 
       GooeyPage pageMenu = GooeyPage.builder()

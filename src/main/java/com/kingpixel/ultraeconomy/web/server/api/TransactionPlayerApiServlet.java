@@ -1,6 +1,6 @@
 package com.kingpixel.ultraeconomy.web.server.api;
 
-import com.kingpixel.cobbleutils.util.Utils;
+import com.kingpixel.cobbleutils.util.UtilsFile;
 import com.kingpixel.ultraeconomy.database.DatabaseFactory;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
@@ -42,7 +42,7 @@ public class TransactionPlayerApiServlet extends HttpServlet {
       parseLimit(req.getParameter("limit"), 500, 2000)
     );
 
-    var json = Utils.newWithoutSpacingGson().toJson(transactions);
+    var json = UtilsFile.getGson().toJson(transactions);
 
     resp.setStatus(HttpServletResponse.SC_OK);
     resp.getWriter().write(json);
@@ -51,7 +51,7 @@ public class TransactionPlayerApiServlet extends HttpServlet {
   private int parseLimit(String value, int defaultVal, int max) {
     if (value == null) return defaultVal;
     try {
-      return Math.min(max, Math.max(1, Integer.parseInt(value)));
+      return Math.clamp(Integer.parseInt(value), 1, max);
     } catch (NumberFormatException e) {
       return defaultVal;
     }
