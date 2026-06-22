@@ -1,8 +1,19 @@
 # Changelog
 
+## [1.2.0] - 2026-06-23
+
+### Added
+
+- Added /ultraeconomy reset command to reset a player's balance.
+
+### Changed
+
+- Project structure and dependencies updated.
+
 ## [1.1.0] - 2026-05-02
 
 ### Added
+
 - Backup system for economy data.
 - Discord webhook notifications for transactions.
 - More detailed transaction history with advanced filtering.
@@ -11,6 +22,7 @@
 ## [1.0.1] - 2026-05-02
 
 ### Added
+
 - Cached account retrieval method to improve lookup performance.
 - Command cooldown check in PayCommand to prevent command spam.
 - Payment validation in PayCommand to prevent negative or zero transactions.
@@ -18,6 +30,7 @@
 - Improved account retrieval logic with better caching mechanisms.
 
 ### Changed
+
 - Refactored transaction methods in ImpactorAccountMixin to use builder pattern for better maintainability.
 - Enhanced chart rendering stability and improved currency selection handling in web UI.
 - Refactored various components to improve code consistency and logging functionality.
@@ -30,6 +43,7 @@
 - Enhanced MongoDBClient connection management with atomic state tracking.
 
 ### Fixed
+
 - Fixed import statement for BlanketEconomyAPI in BeconomyServiceMixin.
 - Fixed transaction history processing in MongoDBClient to ensure proper server readiness checks.
 - Fixed transaction handling to ensure server is running before processing.
@@ -39,6 +53,7 @@
 ## [1.0.0] - 2025-12-01
 
 ### Added
+
 - Initial release of **UltraEconomy**.
 - Basic economy system with coins and shop.
 - Integration with **Modrinth** and **Discord** notifications.
@@ -49,12 +64,13 @@
 - Added commands cooldown system.
 
 ### Changed
+
 - Project structure and dependencies updated.
 - Gradle build optimizations.
 
 ### Fixed
+
 - Minor bug fixes in user data saving.
 - Fixed Injection issue in Impactor Mixins.
 - Fixed SQLite logic when player is offline.
 - Fixed issue with transaction history not processing correctly.
-
