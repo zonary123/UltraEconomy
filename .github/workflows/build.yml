@@ -58,8 +58,8 @@ jobs:
         run: |
           BASE=$(echo "$TAG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
           tr -d '\r' < CHANGELOG.md | awk -v ver="$BASE" '
-            $0 ~ "## \\[" ver "\\]" {flag=1; next}
-            /^## \[/ && flag {flag=0}
+            index($0, "## [" ver "]") {flag=1; next}
+            /^## \[/ {if (flag) {flag=0}}
             flag {print}
           ' > changelog_temp.md
           
