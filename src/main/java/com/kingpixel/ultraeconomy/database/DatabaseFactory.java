@@ -15,6 +15,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 public class DatabaseFactory {
+  private DatabaseFactory() {}
   /**
    * Local account cache. In cross-server environments with a shared DB,
    * the TTL ensures stale data is evicted and re-read from the database.
@@ -64,6 +65,9 @@ public class DatabaseFactory {
         throw new DatabaseConnectionException("Unknown database type " + Arrays.toString(DataBaseType.values()));
     }
     INSTANCE.connect(config);
+    if (!INSTANCE.isConnected()) {
+      throw new DatabaseConnectionException(config.getType().name());
+    }
   }
 
   public static boolean isConnected() {

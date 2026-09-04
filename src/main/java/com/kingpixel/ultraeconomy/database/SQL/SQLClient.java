@@ -69,7 +69,7 @@ public class SQLClient extends DatabaseClient {
       );
 
     } catch (Exception e) {
-      throw new DatabaseConnectionException(config.getType().name());
+      throw new DatabaseConnectionException(config.getType().name(), e);
     }
   }
 

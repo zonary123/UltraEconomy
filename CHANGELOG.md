@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.1] - 2026-09-04
+
+### Fixed
+
+- Prevented the server from starting if the database connection fails, protecting economy data from corruption or loss.
+
 ## [1.2.0] - 2026-06-23
 
 ### Added

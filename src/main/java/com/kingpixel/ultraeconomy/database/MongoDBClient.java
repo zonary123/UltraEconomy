@@ -6,6 +6,7 @@ import com.kingpixel.cobbleutils.util.mongodb.MongoDBManager;
 import com.kingpixel.cobbleutils.util.mongodb.MongoDBService;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.config.Currencies;
+import com.kingpixel.ultraeconomy.exceptions.DatabaseConnectionException;
 import com.kingpixel.ultraeconomy.models.Account;
 import com.kingpixel.ultraeconomy.models.BackupInfo;
 import com.kingpixel.ultraeconomy.models.Currency;
@@ -68,10 +69,14 @@ public class MongoDBClient extends DatabaseClient {
     shuttingDown.set(false);
 
     try {
+      MongoDBManager manager = getManager();
+      if (manager == null || !manager.isConnected()) {
+        throw new DatabaseConnectionException(config.getType().name());
+      }
 
-      accountsCollection = getManager().getCollection(getDatabase(), ACCOUNTS_COLLECTION);
-      transactionsCollection = getManager().getCollection(getDatabase(), TRANSACTIONS_COLLECTION);
-      backupsCollection = getManager().getCollection(getDatabase(), BACKUPS_COLLECTION);
+      accountsCollection = manager.getCollection(getDatabase(), ACCOUNTS_COLLECTION);
+      transactionsCollection = manager.getCollection(getDatabase(), TRANSACTIONS_COLLECTION);
+      backupsCollection = manager.getCollection(getDatabase(), BACKUPS_COLLECTION);
 
       ensureIndexes();
 
@@ -92,6 +97,10 @@ public class MongoDBClient extends DatabaseClient {
     } catch (Exception e) {
       connected.set(false);
       UltraEconomy.LOGGER.error("Could not connect to MongoDB", e);
+      if (e instanceof DatabaseConnectionException dce) {
+        throw dce;
+      }
+      throw new DatabaseConnectionException(config.getType().name(), e);
     }
   }
 
@@ -118,16 +127,16 @@ public class MongoDBClient extends DatabaseClient {
 
 
   private void ensureIndexes() {
-    try {
-      Set<String> existingIndexes = new HashSet<>();
-      for (Document index : accountsCollection.listIndexes()) {
-        existingIndexes.add(index.get("name", String.class));
-      }
+    Set<String> existingIndexes = new HashSet<>();
+    for (Document index : accountsCollection.listIndexes()) {
+      existingIndexes.add(index.get("name", String.class));
+    }
 
-      if (!existingIndexes.contains("uuid_1")) {
-        accountsCollection.createIndex(new Document(FIELD_UUID, 1));
-      }
+    if (!existingIndexes.contains("uuid_1")) {
+      accountsCollection.createIndex(new Document(FIELD_UUID, 1));
+    }
 
+    if (transactionsCollection != null) {
       existingIndexes.clear();
       for (Document index : transactionsCollection.listIndexes()) {
         existingIndexes.add(index.get("name", String.class));
@@ -142,11 +151,9 @@ public class MongoDBClient extends DatabaseClient {
       if (!existingIndexes.contains("processed_1")) {
         transactionsCollection.createIndex(new Document(FIELD_PROCESSED, 1));
       }
-
-      UltraEconomy.LOGGER.info("Indexes verified/created successfully.");
-    } catch (Exception e) {
-      UltraEconomy.LOGGER.error("Error ensuring MongoDB indexes: " + e.getMessage());
     }
+
+    UltraEconomy.LOGGER.info("Indexes verified/created successfully.");
   }
 
   @Override
