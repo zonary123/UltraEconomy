@@ -66,6 +66,7 @@ public class UltraEconomy implements ModInitializer {
       DatabaseFactory.INSTANCE.flushCacheSync(10, TimeUnit.SECONDS);
     }
     DatabaseFactory.init(config.getDatabase());
+    com.kingpixel.ultraeconomy.services.EconomyRedisService.init();
   }
 
   public void events() {
@@ -103,6 +104,7 @@ public class UltraEconomy implements ModInitializer {
       LOGGER.info("Server stopping — flushing all dirty accounts...");
       DatabaseFactory.INSTANCE.flushCacheSync(30, TimeUnit.SECONDS);
       DatabaseFactory.INSTANCE.disconnect();
+      com.kingpixel.ultraeconomy.services.EconomyRedisService.shutdown();
       webModule.stop();
       server = null;
     });

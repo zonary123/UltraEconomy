@@ -53,7 +53,9 @@ public class Account {
   }
 
   public Account(UUID playerUUID) {
-    ServerPlayerEntity player = CobbleUtils.server.getPlayerManager().getPlayer(playerUUID);
+    ServerPlayerEntity player = CobbleUtils.server != null && CobbleUtils.server.getPlayerManager() != null
+      ? CobbleUtils.server.getPlayerManager().getPlayer(playerUUID)
+      : null;
     if (player != null) this.playerName = player.getGameProfile().getName();
     this.playerUUID = playerUUID;
     this.balances = defaultBalances();
@@ -61,7 +63,9 @@ public class Account {
   }
 
   public Account(UUID uuid, Map<String, BigDecimal> balances) {
-    ServerPlayerEntity player = CobbleUtils.server.getPlayerManager().getPlayer(uuid);
+    ServerPlayerEntity player = CobbleUtils.server != null && CobbleUtils.server.getPlayerManager() != null
+      ? CobbleUtils.server.getPlayerManager().getPlayer(uuid)
+      : null;
     if (player != null) this.playerName = player.getGameProfile().getName();
     this.playerUUID = uuid;
     this.balances = new ConcurrentHashMap<>(balances);

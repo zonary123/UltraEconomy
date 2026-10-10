@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.2.2] - 2026-10-10
+
+### Added
+
+- **Cross-Server Real-Time Synchronization**: Added support for Redis (`useRedis` in `config.json`), allowing instant balance updates and immediate transaction processing across multi-server networks without waiting for periodic database polling.
+
+### Changed
+
+- **CobbleUtils Dependency**: Updated core CobbleUtils library to version 1.3.6 for improved stability, performance, and compatibility.
+
+### Fixed
+
+- **Pending Transactions Getting Stuck**: Fixed an issue in MongoDB and SQL where transactions (such as web store purchases or offline deposits) could pause or never process if the player's account was not currently loaded in cache.
+- **Transaction Queue Freezes**: Resolved a problem where corrupted or unreadable transactions could block the entire queue from processing any further transactions.
+- **Direct Balance Updates for Online Players**: Money added or removed for players currently active on the server now updates instantly without unnecessary queuing delays.
+- **Server Stability Protections**: Added defensive checks when querying offline players and during server startup or shutdown, preventing unexpected crashes and null pointer errors.
+
 ## [1.2.1] - 2026-09-04
 
 ### Fixed

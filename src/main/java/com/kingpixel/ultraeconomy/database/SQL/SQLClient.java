@@ -14,6 +14,7 @@ import com.kingpixel.ultraeconomy.models.Account;
 import com.kingpixel.ultraeconomy.models.BackupInfo;
 import com.kingpixel.ultraeconomy.models.Currency;
 import com.kingpixel.ultraeconomy.models.Transaction;
+import com.kingpixel.ultraeconomy.services.EconomyRedisService;
 import com.zaxxer.hikari.HikariDataSource;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -171,13 +172,22 @@ public class SQLClient extends DatabaseClient {
   @Override
   public boolean addBalance(UUID uuid, Currency currency, BigDecimal amount) {
     Account account = getCachedAccount(uuid);
+    if (account == null && UltraEconomy.server != null && UltraEconomy.server.getPlayerManager() != null) {
+      if (UltraEconomy.server.getPlayerManager().getPlayer(uuid) != null) {
+        account = getAccount(uuid);
+      }
+    }
     boolean result = false;
     if (account == null) {
       addTransaction(uuid, currency, amount, TransactionType.DEPOSIT, false);
       result = true;
     } else {
       result = account.addBalance(currency, amount);
-      if (result) addTransaction(uuid, currency, amount, TransactionType.DEPOSIT, true);
+      if (result) {
+        addTransaction(uuid, currency, amount, TransactionType.DEPOSIT, true);
+        saveOrUpdateAccount(account);
+        EconomyRedisService.publishAccountUpdate(uuid, currency, account.getBalance(currency));
+      }
     }
     return result;
   }
@@ -191,19 +201,29 @@ public class SQLClient extends DatabaseClient {
       if (account == null) return false;
     }
     boolean result = account.removeBalance(currency, amount);
-    if (result) addTransaction(uuid, currency, amount, TransactionType.WITHDRAW, true);
+    if (result) {
+      addTransaction(uuid, currency, amount, TransactionType.WITHDRAW, true);
+      saveOrUpdateAccount(account);
+      EconomyRedisService.publishAccountUpdate(uuid, currency, account.getBalance(currency));
+    }
     return result;
   }
 
   @Override
   public BigDecimal setBalance(UUID uuid, Currency currency, BigDecimal amount) {
     Account account = getCachedAccount(uuid);
+    if (account == null && UltraEconomy.server != null && UltraEconomy.server.getPlayerManager() != null) {
+      if (UltraEconomy.server.getPlayerManager().getPlayer(uuid) != null) {
+        account = getAccount(uuid);
+      }
+    }
     if (account == null) {
       addTransaction(uuid, currency, amount, TransactionType.SET, false);
     } else {
       account.setBalance(currency, amount);
       addTransaction(uuid, currency, amount, TransactionType.SET, true);
-      // Dirty flag is set — the periodic flush will persist this
+      saveOrUpdateAccount(account);
+      EconomyRedisService.publishAccountUpdate(uuid, currency, account.getBalance(currency));
     }
     return amount;
   }
@@ -275,6 +295,9 @@ public class SQLClient extends DatabaseClient {
         stmt.setString(4, type.name());
         stmt.setBoolean(5, processed);
         stmt.executeUpdate();
+        if (!processed) {
+          EconomyRedisService.publishTransactionNotify(uuid);
+        }
       } catch (SQLException e) {
         UltraEconomy.LOGGER.error("Error adding transaction for {}", uuid, e);
       }
@@ -603,7 +626,7 @@ public class SQLClient extends DatabaseClient {
         while (rs.next()) {
           long id = rs.getLong("id");
           UUID uuid = UUID.fromString(rs.getString("account_uuid"));
-          Account account = DatabaseFactory.ACCOUNTS.getIfPresent(uuid);
+          Account account = getAccount(uuid);
           if (account == null) continue;
 
           String currencyId = rs.getString("currency_id");
@@ -659,6 +682,7 @@ public class SQLClient extends DatabaseClient {
       Account account = DatabaseFactory.ACCOUNTS.getIfPresent(uuid);
       if (account != null && account.isDirty()) {
         saveOrUpdateAccount(account);
+        EconomyRedisService.publishAccountUpdate(uuid, null, null);
       }
     }
   }
@@ -761,5 +785,10 @@ public class SQLClient extends DatabaseClient {
     } catch (SQLException e) {
       return false;
     }
+  }
+
+  @Override
+  public void triggerTransactionCheck() {
+    UltraEconomy.runAsync(this::checkAndApplyTransactions);
   }
 }

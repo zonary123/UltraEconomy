@@ -230,4 +230,11 @@ public abstract class DatabaseClient {
   public abstract List<Transaction> getTransactions(UUID uuid, int limit);
 
   public abstract Account getAccountByName(String name);
+
+  /**
+   * Trigger an immediate asynchronous check and application of pending transactions.
+   */
+  public void triggerTransactionCheck() {
+    // Default no-op for clients that do not maintain transaction queues
+  }
 }

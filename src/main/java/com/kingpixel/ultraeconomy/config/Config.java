@@ -4,6 +4,7 @@ import com.kingpixel.cobbleutils.Model.DataBaseConfig;
 import com.kingpixel.cobbleutils.Model.DataBaseType;
 import com.kingpixel.cobbleutils.Model.DurationValue;
 import com.kingpixel.cobbleutils.util.UtilsFile;
+import com.kingpixel.cobbleutils.util.redis.RedisConfig;
 import com.kingpixel.ultraeconomy.UltraEconomy;
 import com.kingpixel.ultraeconomy.models.MigrationConfig;
 import lombok.Data;
@@ -46,6 +47,12 @@ public class Config {
   private boolean web;
   private WebSecurityConfig webSecurity;
 
+  /**
+   * Redis cross-server synchronization.
+   */
+  private boolean useRedis;
+  private RedisConfig redis;
+
   public Config() {
     debug = false;
     web = false;
@@ -65,6 +72,14 @@ public class Config {
     balTopCooldown = DurationValue.parse("10s");
     cacheTtlSeconds = 60;
     webSecurity = new WebSecurityConfig();
+    useRedis = false;
+    redis = new RedisConfig();
+    redis.setHost("127.0.0.1");
+    redis.setPort(6379);
+    redis.setPassword("");
+    redis.setChannel("ultraeconomy");
+    redis.setMaxConnections(8);
+    redis.setTimeout(2000);
   }
 
   public void init() {

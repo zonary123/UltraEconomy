@@ -11,6 +11,7 @@ import com.kingpixel.ultraeconomy.models.Account;
 import com.kingpixel.ultraeconomy.models.BackupInfo;
 import com.kingpixel.ultraeconomy.models.Currency;
 import com.kingpixel.ultraeconomy.models.Transaction;
+import com.kingpixel.ultraeconomy.services.EconomyRedisService;
 import com.mongodb.MongoNamespace;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.*;
@@ -231,6 +232,9 @@ public class MongoDBClient extends DatabaseClient {
     UltraEconomy.runAsync(() -> {
       Transaction transaction = new Transaction(uuid, currency.getId(), amount, type, processed, Instant.now());
       transactionsCollection.insertOne(transaction.toDocument());
+      if (!processed) {
+        EconomyRedisService.publishTransactionNotify(uuid);
+      }
     });
   }
 
@@ -439,8 +443,11 @@ public class MongoDBClient extends DatabaseClient {
 
         UUID uuid = UUID.fromString(tx.getString(FIELD_ACCOUNT_UUID));
         ServerPlayerEntity player = UltraEconomy.server.getPlayerManager().getPlayer(uuid);
-        Account account = getCachedAccount(uuid);
-        if (account == null || player == null || player.isDisconnected()) {
+        if (player == null || player.isDisconnected()) {
+          continue;
+        }
+        Account account = getAccount(uuid);
+        if (account == null) {
           continue;
         }
 
@@ -456,7 +463,11 @@ public class MongoDBClient extends DatabaseClient {
           case Double d -> amount = BigDecimal.valueOf(d);
           case Float f -> amount = BigDecimal.valueOf(f);
           default -> {
-            UltraEconomy.LOGGER.error("Unknown amount type in transaction: {}", tx.toJson());
+            UltraEconomy.LOGGER.error("Unknown amount type in transaction, marking processed: {}", tx.toJson());
+            transactionsCollection.updateOne(
+              Filters.eq("_id", tx.getObjectId("_id")),
+              Updates.set(FIELD_PROCESSED, true)
+            );
             continue;
           }
         }
@@ -465,7 +476,11 @@ public class MongoDBClient extends DatabaseClient {
         try {
           type = TransactionType.valueOf(tx.getString("type"));
         } catch (IllegalArgumentException ex) {
-          UltraEconomy.LOGGER.error("Invalid transaction type: {}", tx.toJson(), ex);
+          UltraEconomy.LOGGER.error("Invalid transaction type, marking processed: {}", tx.toJson(), ex);
+          transactionsCollection.updateOne(
+            Filters.eq("_id", tx.getObjectId("_id")),
+            Updates.set(FIELD_PROCESSED, true)
+          );
           continue;
         }
 
@@ -521,8 +536,11 @@ public class MongoDBClient extends DatabaseClient {
             default -> { /* unreachable */ }
           }
           saveAccount(account);
-        } else if (UltraEconomy.config.isDebug()) {
-          UltraEconomy.LOGGER.info("Processed transaction: {}", tx.toJson());
+        } else {
+          EconomyRedisService.publishAccountUpdate(uuid, currency, account.getBalance(currency));
+          if (UltraEconomy.config.isDebug()) {
+            UltraEconomy.LOGGER.info("Processed transaction: {}", tx.toJson());
+          }
         }
       }
     } catch (Exception e) {
@@ -565,6 +583,11 @@ public class MongoDBClient extends DatabaseClient {
   @Override
   public boolean addBalance(UUID uuid, Currency currency, BigDecimal amount) {
     Account account = getCachedAccount(uuid);
+    if (account == null && UltraEconomy.server != null && UltraEconomy.server.getPlayerManager() != null) {
+      if (UltraEconomy.server.getPlayerManager().getPlayer(uuid) != null) {
+        account = getAccount(uuid);
+      }
+    }
     boolean result = true;
     if (account == null) {
       if (UltraEconomy.config.isDebug()) {
@@ -576,7 +599,11 @@ public class MongoDBClient extends DatabaseClient {
         UltraEconomy.LOGGER.info("Account found in cache for UUID: " + uuid + ", adding balance.");
       }
       result = account.addBalance(currency, amount);
-      if (result) addTransaction(uuid, currency, amount, TransactionType.DEPOSIT, true);
+      if (result) {
+        addTransaction(uuid, currency, amount, TransactionType.DEPOSIT, true);
+        saveOrUpdateAccount(account);
+        EconomyRedisService.publishAccountUpdate(uuid, currency, account.getBalance(currency));
+      }
     }
     return result;
   }
@@ -591,18 +618,29 @@ public class MongoDBClient extends DatabaseClient {
       if (account == null) return false;
     }
     boolean result = account.removeBalance(currency, amount);
-    if (result) addTransaction(uuid, currency, amount, TransactionType.WITHDRAW, true);
+    if (result) {
+      addTransaction(uuid, currency, amount, TransactionType.WITHDRAW, true);
+      saveOrUpdateAccount(account);
+      EconomyRedisService.publishAccountUpdate(uuid, currency, account.getBalance(currency));
+    }
     return result;
   }
 
   @Override
   public BigDecimal setBalance(UUID uuid, Currency currency, BigDecimal amount) {
     Account account = getCachedAccount(uuid);
+    if (account == null && UltraEconomy.server != null && UltraEconomy.server.getPlayerManager() != null) {
+      if (UltraEconomy.server.getPlayerManager().getPlayer(uuid) != null) {
+        account = getAccount(uuid);
+      }
+    }
     if (account == null) {
       addTransaction(uuid, currency, amount, TransactionType.SET, false);
     } else {
       account.setBalance(currency, amount);
       addTransaction(uuid, currency, amount, TransactionType.SET, true);
+      saveOrUpdateAccount(account);
+      EconomyRedisService.publishAccountUpdate(uuid, currency, account.getBalance(currency));
     }
     return amount;
   }
@@ -619,5 +657,10 @@ public class MongoDBClient extends DatabaseClient {
     Account account = getAccount(uuid);
     if (account == null) return false;
     return account.hasEnoughBalance(currency, amount);
+  }
+
+  @Override
+  public void triggerTransactionCheck() {
+    UltraEconomy.runAsync(this::safeCheckAndApplyTransactions);
   }
 }

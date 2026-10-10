@@ -55,6 +55,7 @@ public class UltraEconomyApi {
    * @return the account
    */
   public static Account getAccount(@NotNull String playerName) {
+    if (CobbleUtils.server == null) return null;
     UserCache userCache = CobbleUtils.server.getUserCache();
     if (userCache == null) return null;
     var profile = userCache.findByName(playerName);
